@@ -10,4 +10,3 @@ add_library(parser STATIC
 target_include_directories(parser PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(parser PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 target_include_directories(parser PUBLIC ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(parser PUBLIC lexer)

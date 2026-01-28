@@ -9,18 +9,12 @@
 namespace c2rars {
 namespace ast {
 
-/**
- * @brief Base class for all AST nodes
- */
 class ASTNode {
 public:
     virtual ~ASTNode() = default;
     virtual void print(std::ostream& os, int indent = 0) const = 0;
 };
 
-/**
- * @brief Assembler directive
- */
 class Directive : public ASTNode {
 public:
     enum Type {
@@ -61,9 +55,6 @@ public:
     }
 };
 
-/**
- * @brief Label
- */
 class Label : public ASTNode {
 public:
     std::string name;
@@ -75,9 +66,6 @@ public:
     }
 };
 
-/**
- * @brief Base class for operands (polymorphic)
- */
 class Operand {
 public:
     virtual ~Operand() = default;
@@ -87,9 +75,6 @@ public:
     virtual std::unique_ptr<Operand> clone() const = 0;
 };
 
-/**
- * @brief Register (x0-x31)
- */
 class Register : public Operand {
 private:
     int number;
@@ -114,9 +99,6 @@ public:
     }
 };
 
-/**
- * @brief Immediate value (constant)
- */
 class Immediate : public Operand {
 private:
     int value;
@@ -135,15 +117,12 @@ public:
     }
 };
 
-/**
- * @brief Label (for jumps and addresses)
- */
-class Label : public Operand {
+class LabelOperand : public Operand {
 private:
     std::string name;
     
 public:
-    explicit Label(const std::string& n) : name(n) {}
+    explicit LabelOperand(const std::string& n) : name(n) {}
     
     const std::string& getName() const { return name; }
     
@@ -152,13 +131,10 @@ public:
     }
     
     std::unique_ptr<Operand> clone() const override {
-        return std::make_unique<Label>(name);
+        return std::make_unique<LabelOperand>(name);
     }
 };
 
-/**
- * @brief Assembler instruction (universal)
- */
 class Instruction : public ASTNode {
 public:
     enum OpCode {
@@ -236,7 +212,7 @@ public:
     }
     
     void addLabel(const std::string& label) {
-        operands.push_back(std::make_unique<Label>(label));
+        operands.push_back(std::make_unique<LabelOperand>(label));
     }
     
     size_t getOperandCount() const { return operands.size(); }
@@ -324,9 +300,6 @@ public:
     }
 };
 
-/**
- * @brief Program - AST root
- */
 class Program : public ASTNode {
 public:
     std::vector<std::unique_ptr<ASTNode>> statements;

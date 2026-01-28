@@ -2,15 +2,18 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
-#include "parser.tab.hpp"
-#include "ast.h"
+#include "scanner.h"
+
+#undef YY_DECL
+#define YY_DECL yy::parser::symbol_type c2rars::Scanner::get_next_token()
 
 %}
 
+%option c++
 %option noyywrap
 %option yylineno
-%option c++
-%option yyclass="RiscvLexer"
+%option prefix="C2rars"
+%option yyclass="c2rars::Scanner"
 
 /* Definitions */
 DIGIT       [0-9]
@@ -20,107 +23,105 @@ ALNUM       [a-zA-Z0-9_]
 
 %%
 
-    /* Directives */
-".text"         { return TEXT_DIRECTIVE; }
-".data"         { return DATA_DIRECTIVE; }
-".bss"          { return BSS_DIRECTIVE; }
-".globl"        { return GLOBL_DIRECTIVE; }
-".align"        { return ALIGN_DIRECTIVE; }
-".section"      { return SECTION_DIRECTIVE; }
-".string"       { return STRING_DIRECTIVE; }
-".asciz"        { return ASCIZ_DIRECTIVE; }
-".word"         { return WORD_DIRECTIVE; }
-".byte"         { return BYTE_DIRECTIVE; }
-".half"         { return HALF_DIRECTIVE; }
-".space"        { return SPACE_DIRECTIVE; }
+/* Directives */
+".text"         { return yy::parser::make_TEXT_DIRECTIVE(); }
+".data"         { return yy::parser::make_DATA_DIRECTIVE(); }
+".bss"          { return yy::parser::make_BSS_DIRECTIVE(); }
+".globl"        { return yy::parser::make_GLOBL_DIRECTIVE(); }
+".align"        { return yy::parser::make_ALIGN_DIRECTIVE(); }
+".section"      { return yy::parser::make_SECTION_DIRECTIVE(); }
+".string"       { return yy::parser::make_STRING_DIRECTIVE(); }
+".asciz"        { return yy::parser::make_ASCIZ_DIRECTIVE(); }
+".word"         { return yy::parser::make_WORD_DIRECTIVE(); }
+".byte"         { return yy::parser::make_BYTE_DIRECTIVE(); }
+".half"         { return yy::parser::make_HALF_DIRECTIVE(); }
+".space"        { return yy::parser::make_SPACE_DIRECTIVE(); }
 
-    /* RISC-V Instructions */
-"add"           { return ADD; }
-"addi"          { return ADDI; }
-"sub"           { return SUB; }
-"mul"           { return MUL; }
-"div"           { return DIV; }
-"rem"           { return REM; }
-"and"           { return AND; }
-"or"            { return OR; }
-"xor"           { return XOR; }
-"sll"           { return SLL; }
-"srl"           { return SRL; }
-"sra"           { return SRA; }
-"lw"            { return LW; }
-"sw"            { return SW; }
-"lb"            { return LB; }
-"sb"            { return SB; }
-"beq"           { return BEQ; }
-"bne"           { return BNE; }
-"blt"           { return BLT; }
-"bge"           { return BGE; }
-"jal"           { return JAL; }
-"jalr"          { return JALR; }
-"ret"           { return RET; }
-"ecall"         { return ECALL; }
+/* RISC-V Instructions */
+"add"           { return yy::parser::make_ADD(); }
+"addi"          { return yy::parser::make_ADDI(); }
+"sub"           { return yy::parser::make_SUB(); }
+"mul"           { return yy::parser::make_MUL(); }
+"div"           { return yy::parser::make_DIV(); }
+"rem"           { return yy::parser::make_REM(); }
+"and"           { return yy::parser::make_AND(); }
+"or"            { return yy::parser::make_OR(); }
+"xor"           { return yy::parser::make_XOR(); }
+"sll"           { return yy::parser::make_SLL(); }
+"srl"           { return yy::parser::make_SRL(); }
+"sra"           { return yy::parser::make_SRA(); }
+"lw"            { return yy::parser::make_LW(); }
+"sw"            { return yy::parser::make_SW(); }
+"lb"            { return yy::parser::make_LB(); }
+"sb"            { return yy::parser::make_SB(); }
+"beq"           { return yy::parser::make_BEQ(); }
+"bne"           { return yy::parser::make_BNE(); }
+"blt"           { return yy::parser::make_BLT(); }
+"bge"           { return yy::parser::make_BGE(); }
+"jal"           { return yy::parser::make_JAL(); }
+"jalr"          { return yy::parser::make_JALR(); }
+"ret"           { return yy::parser::make_RET(); }
+"ecall"         { return yy::parser::make_ECALL(); }
 
-    /* Registers */
-"x"[0-9]+       { yylval.reg = atoi(yytext + 1); return REGISTER; }
-"zero"|"x0"     { yylval.reg = 0; return REGISTER; }
-"ra"|"x1"       { yylval.reg = 1; return REGISTER; }
-"sp"|"x2"       { yylval.reg = 2; return REGISTER; }
-"gp"|"x3"       { yylval.reg = 3; return REGISTER; }
-"tp"|"x4"       { yylval.reg = 4; return REGISTER; }
-"t0"|"x5"       { yylval.reg = 5; return REGISTER; }
-"t1"|"x6"       { yylval.reg = 6; return REGISTER; }
-"t2"|"x7"       { yylval.reg = 7; return REGISTER; }
-"s0"|"fp"|"x8"  { yylval.reg = 8; return REGISTER; }
-"s1"|"x9"       { yylval.reg = 9; return REGISTER; }
-"a0"|"x10"      { yylval.reg = 10; return REGISTER; }
-"a1"|"x11"      { yylval.reg = 11; return REGISTER; }
-"a2"|"x12"      { yylval.reg = 12; return REGISTER; }
-"a3"|"x13"      { yylval.reg = 13; return REGISTER; }
-"a4"|"x14"      { yylval.reg = 14; return REGISTER; }
-"a5"|"x15"      { yylval.reg = 15; return REGISTER; }
-"a6"|"x16"      { yylval.reg = 16; return REGISTER; }
-"a7"|"x17"      { yylval.reg = 17; return REGISTER; }
+/* Registers */
+"x"[0-9]+       { return yy::parser::make_REGISTER(atoi(yytext + 1)); }
+"zero"|"x0"     { return yy::parser::make_REGISTER(0); }
+"ra"|"x1"       { return yy::parser::make_REGISTER(1); }
+"sp"|"x2"       { return yy::parser::make_REGISTER(2); }
+"gp"|"x3"       { return yy::parser::make_REGISTER(3); }
+"tp"|"x4"       { return yy::parser::make_REGISTER(4); }
+"t0"|"x5"       { return yy::parser::make_REGISTER(5); }
+"t1"|"x6"       { return yy::parser::make_REGISTER(6); }
+"t2"|"x7"       { return yy::parser::make_REGISTER(7); }
+"s0"|"fp"|"x8"  { return yy::parser::make_REGISTER(8); }
+"s1"|"x9"       { return yy::parser::make_REGISTER(9); }
+"a0"|"x10"      { return yy::parser::make_REGISTER(10); }
+"a1"|"x11"      { return yy::parser::make_REGISTER(11); }
+"a2"|"x12"      { return yy::parser::make_REGISTER(12); }
+"a3"|"x13"      { return yy::parser::make_REGISTER(13); }
+"a4"|"x14"      { return yy::parser::make_REGISTER(14); }
+"a5"|"x15"      { return yy::parser::make_REGISTER(15); }
+"a6"|"x16"      { return yy::parser::make_REGISTER(16); }
+"a7"|"x17"      { return yy::parser::make_REGISTER(17); }
 
-    /* Labels */
+/* Labels */
 {LETTER}{ALNUM}*":"     { 
-    yylval.build<std::string>(std::string(yytext, strlen(yytext) - 1));
-    return LABEL_DEF;
+    std::string label(yytext, yyleng - 1);
+    return yy::parser::make_LABEL_DEF(label);
 }
 
 {LETTER}{ALNUM}*        { 
-    yylval.build<std::string>(yytext);
-    return IDENTIFIER;
+    return yy::parser::make_IDENTIFIER(std::string(yytext));
 }
 
-    /* Numbers */
-{DIGIT}+                { yylval.num = atoi(yytext); return NUMBER; }
-"0x"{HEXDIGIT}+         { yylval.num = strtol(yytext, NULL, 16); return NUMBER; }
-"-"{DIGIT}+             { yylval.num = atoi(yytext); return NUMBER; }
+/* Numbers */
+{DIGIT}+                { return yy::parser::make_NUMBER(atoi(yytext)); }
+"0x"{HEXDIGIT}+         { return yy::parser::make_NUMBER(strtol(yytext, NULL, 16)); }
+"-"{DIGIT}+             { return yy::parser::make_NUMBER(atoi(yytext)); }
 
-    /* String literals */
+/* String literals */
 \"([^\\\"]|\\.)*\"      { 
-    yylval.build<std::string>(yytext);
-    return STRING;
+    return yy::parser::make_STRING(std::string(yytext));
 }
 
-    /* Comments */
+/* Comments */
 "#".*                   { /* Ignore comments */ }
 
-    /* Delimiters */
-","                     { return COMMA; }
-"("                     { return LPAREN; }
-")"                     { return RPAREN; }
-":"                     { return COLON; }
+/* Delimiters */
+","                     { return yy::parser::make_COMMA(); }
+"("                     { return yy::parser::make_LPAREN(); }
+")"                     { return yy::parser::make_RPAREN(); }
+":"                     { return yy::parser::make_COLON(); }
 
-    /* Whitespace */
+/* Whitespace */
 [ \t]+                  { /* Ignore whitespace */ }
-\n                      { return NEWLINE; }
+\n                      { return yy::parser::make_NEWLINE(); }
 
-    /* Everything else */
+/* Everything else */
 .                       { 
     std::cerr << "Unknown character: " << yytext 
-              << " on line " << yylineno << std::endl;
-    return ERROR;
+              << " on line " << lineno() << std::endl;
+    return yy::parser::make_ERROR();
 }
 
 %%

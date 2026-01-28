@@ -7,10 +7,6 @@
 
 using namespace c2rars::ast;
 
-extern int yylex();
-void yyerror(const char *s);
-extern int yylineno;
-
 std::unique_ptr<Program> rootProgram;
 
 %}
@@ -29,6 +25,18 @@ std::unique_ptr<Program> rootProgram;
     using InstructionPtr = std::unique_ptr<c2rars::ast::Instruction>;
     using DirectivePtr = std::unique_ptr<c2rars::ast::Directive>;
     using LabelPtr = std::unique_ptr<c2rars::ast::Label>;
+}
+
+%code {
+    #include "scanner.h"
+    
+    c2rars::Scanner* scanner = nullptr;
+    
+    namespace yy {
+        parser::symbol_type yylex() {
+            return scanner->get_next_token();
+        }
+    }
 }
 
 /* Directive tokens */
@@ -127,13 +135,12 @@ label:
     ;
 
 instruction:
-    r_type_inst
-    | i_type_inst
-    | s_type_inst
-    | b_type_inst
-    | u_type_inst
-    | j_type_inst
-    | special_inst
+    r_type_inst { $$ = std::move($1); }
+    | i_type_inst { $$ = std::move($1); }
+    | s_type_inst { $$ = std::move($1); }
+    | b_type_inst { $$ = std::move($1); }
+    | j_type_inst { $$ = std::move($1); }
+    | special_inst { $$ = std::move($1); }
     ;
 
 /* R-type: add, sub, mul, etc. */
@@ -242,9 +249,10 @@ special_inst:
 
 %%
 
-void yyerror(const char *s) {
-    std::cerr << "Syntax error on line " << yylineno 
-              << ": " << s << std::endl;
+namespace yy {
+    void parser::error(const std::string& msg) {
+        std::cerr << "Syntax error: " << msg << std::endl;
+    }
 }
 
 c2rars::ast::Program* getAST() {
