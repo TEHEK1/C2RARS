@@ -46,7 +46,7 @@ bool compileToAssembly(const std::string& inputFile, const std::string& tempAsmF
 
     std::string cmd;
     if (compiler == "gcc") {
-        cmd = "riscv64-unknown-elf-gcc -S -march=rv32i -mabi=ilp32 -O0 -o " 
+        cmd = "riscv64-elf-gcc -S -march=rv32i -mabi=ilp32 -O0 -o " 
               + tempAsmFile + " " + inputFile;
     } else {
         std::cerr << "Unknown compiler: " << compiler << std::endl;
@@ -119,10 +119,19 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::string tempAsmFile = utils::getBaseName(inputFile) + "_temp.s";
-
-    if (!compileToAssembly(inputFile, tempAsmFile, compiler, verbose)) {
-        return 1;
+    std::string tempAsmFile;
+    bool isAssembly = (inputFile.size() > 2 && inputFile.substr(inputFile.size() - 2) == ".s");
+    
+    if (isAssembly) {
+        tempAsmFile = inputFile;
+        if (verbose) {
+            std::cout << "Input is assembly file, using directly\n" << std::endl;
+        }
+    } else {
+        tempAsmFile = utils::getBaseName(inputFile) + "_temp.s";
+        if (!compileToAssembly(inputFile, tempAsmFile, compiler, verbose)) {
+            return 1;
+        }
     }
 
     if (verbose) {

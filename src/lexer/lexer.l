@@ -23,9 +23,9 @@ ALNUM       [a-zA-Z0-9_]
 
 %%
 
-/* Directives */
 ".text"         { return yy::parser::make_TEXT_DIRECTIVE(); }
 ".data"         { return yy::parser::make_DATA_DIRECTIVE(); }
+".rodata"       { return yy::parser::make_DATA_DIRECTIVE(); }  /* Treat .rodata as .data */
 ".bss"          { return yy::parser::make_BSS_DIRECTIVE(); }
 ".globl"        { return yy::parser::make_GLOBL_DIRECTIVE(); }
 ".align"        { return yy::parser::make_ALIGN_DIRECTIVE(); }
@@ -37,7 +37,18 @@ ALNUM       [a-zA-Z0-9_]
 ".half"         { return yy::parser::make_HALF_DIRECTIVE(); }
 ".space"        { return yy::parser::make_SPACE_DIRECTIVE(); }
 
-/* RISC-V Instructions */
+    /* GCC directives to ignore */
+".file"[^\n]*   { /* ignore */ }
+".option"[^\n]* { /* ignore */ }
+".attribute"[^\n]* { /* ignore */ }
+".type"[^\n]*   { /* ignore */ }
+".size"[^\n]*   { /* ignore */ }
+".ident"[^\n]*  { /* ignore */ }
+".section"[^\n]* { /* ignore */ }
+"#APP"[^\n]*    { /* ignore inline asm markers */ }
+"#NO_APP"[^\n]* { /* ignore inline asm markers */ }
+"nop"           { /* ignore nop for now */ }
+
 "add"           { return yy::parser::make_ADD(); }
 "addi"          { return yy::parser::make_ADDI(); }
 "sub"           { return yy::parser::make_SUB(); }
@@ -62,8 +73,13 @@ ALNUM       [a-zA-Z0-9_]
 "jalr"          { return yy::parser::make_JALR(); }
 "ret"           { return yy::parser::make_RET(); }
 "ecall"         { return yy::parser::make_ECALL(); }
+"la"            { return yy::parser::make_LA(); }
+"li"            { return yy::parser::make_LI(); }
+"mv"            { return yy::parser::make_MV(); }
+"jr"            { return yy::parser::make_JR(); }
+"lui"           { return yy::parser::make_LUI(); }
+"call"          { return yy::parser::make_CALL(); }
 
-/* Registers */
 "x"[0-9]+       { return yy::parser::make_REGISTER(atoi(yytext + 1)); }
 "zero"|"x0"     { return yy::parser::make_REGISTER(0); }
 "ra"|"x1"       { return yy::parser::make_REGISTER(1); }
@@ -84,8 +100,7 @@ ALNUM       [a-zA-Z0-9_]
 "a6"|"x16"      { return yy::parser::make_REGISTER(16); }
 "a7"|"x17"      { return yy::parser::make_REGISTER(17); }
 
-/* Labels */
-{LETTER}{ALNUM}*":"     { 
+{LETTER}{ALNUM}*":"     {
     std::string label(yytext, yyleng - 1);
     return yy::parser::make_LABEL_DEF(label);
 }
@@ -94,31 +109,25 @@ ALNUM       [a-zA-Z0-9_]
     return yy::parser::make_IDENTIFIER(std::string(yytext));
 }
 
-/* Numbers */
 {DIGIT}+                { return yy::parser::make_NUMBER(atoi(yytext)); }
 "0x"{HEXDIGIT}+         { return yy::parser::make_NUMBER(strtol(yytext, NULL, 16)); }
 "-"{DIGIT}+             { return yy::parser::make_NUMBER(atoi(yytext)); }
 
-/* String literals */
-\"([^\\\"]|\\.)*\"      { 
+\"([^\\\"]|\\.)*\"      {
     return yy::parser::make_STRING(std::string(yytext));
 }
 
-/* Comments */
-"#".*                   { /* Ignore comments */ }
+"#".*                   { /* Ignore RISC-V comments */ }
 
-/* Delimiters */
 ","                     { return yy::parser::make_COMMA(); }
 "("                     { return yy::parser::make_LPAREN(); }
 ")"                     { return yy::parser::make_RPAREN(); }
 ":"                     { return yy::parser::make_COLON(); }
 
-/* Whitespace */
 [ \t]+                  { /* Ignore whitespace */ }
 \n                      { return yy::parser::make_NEWLINE(); }
 
-/* Everything else */
-.                       { 
+.                       {  /* Catch-all for unknown characters */ 
     std::cerr << "Unknown character: " << yytext 
               << " on line " << lineno() << std::endl;
     return yy::parser::make_ERROR();

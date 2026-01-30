@@ -198,9 +198,34 @@ bool Transformer::transformAST(ast::Program* ast) {
     
     removeUnsupportedDirectivesFromAST(ast);
     
-    for (auto& stmt : ast->statements) {
+    std::string currentFunction;
+    for (size_t i = 0; i < ast->statements.size(); i++) {
+        auto& stmt = ast->statements[i];
+        
+        if (auto* lbl = dynamic_cast<Label*>(stmt.get())) {
+            currentFunction = lbl->name;
+        }
+        
         if (auto* inst = dynamic_cast<Instruction*>(stmt.get())) {
             processInstruction(inst);
+            
+            if (currentFunction == "main" && 
+                (inst->opcode == Instruction::RET || inst->opcode == Instruction::JR)) {
+                if (m_verbose) {
+                    std::cout << "  Replacing " << inst->opcodeToString() 
+                              << " in main() with exit syscall" << std::endl;
+                }
+                
+                // Replace ret with: li a7, 10; ecall
+                inst->opcode = Instruction::LI;
+                inst->operands.clear();
+                inst->addRegister(17);
+                inst->addImmediate(10);
+                
+                auto ecall = std::make_unique<Instruction>(Instruction::ECALL);
+                ast->statements.insert(ast->statements.begin() + i + 1, std::move(ecall));
+                i++;
+            }
         }
     }
     

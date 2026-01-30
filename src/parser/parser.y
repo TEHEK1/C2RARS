@@ -52,6 +52,7 @@ std::unique_ptr<Program> rootProgram;
 %token LW SW LB SB
 %token BEQ BNE BLT BGE
 %token JAL JALR RET ECALL
+%token LA LI MV JR LUI CALL
 
 /* Operand tokens */
 %token <int> REGISTER
@@ -63,7 +64,7 @@ std::unique_ptr<Program> rootProgram;
 
 /* Nonterminal types */
 %type <ASTNodePtr> line
-%type <InstructionPtr> instruction r_type_inst i_type_inst s_type_inst b_type_inst j_type_inst special_inst
+%type <InstructionPtr> instruction r_type_inst i_type_inst s_type_inst b_type_inst u_type_inst j_type_inst special_inst
 %type <DirectivePtr> directive
 %type <LabelPtr> label
 
@@ -139,6 +140,7 @@ instruction:
     | i_type_inst { $$ = std::move($1); }
     | s_type_inst { $$ = std::move($1); }
     | b_type_inst { $$ = std::move($1); }
+    | u_type_inst { $$ = std::move($1); }
     | j_type_inst { $$ = std::move($1); }
     | special_inst { $$ = std::move($1); }
     ;
@@ -185,11 +187,20 @@ i_type_inst:
     ADDI REGISTER COMMA REGISTER COMMA NUMBER { 
         $$ = Instruction::CreateIType(Instruction::ADDI, $2, $4, $6);
     }
-    | LW REGISTER COMMA NUMBER LPAREN REGISTER RPAREN { 
-        $$ = Instruction::CreateIType(Instruction::LW, $2, $6, $4);
+    | LW REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
+        // Load needs [rd, imm, rs1] order for transformer compatibility  
+        auto inst = std::make_unique<Instruction>(Instruction::LW);
+        inst->addRegister($2);      // rd
+        inst->addImmediate($4);     // offset
+        inst->addRegister($6);      // base
+        $$ = std::move(inst);
     }
-    | LB REGISTER COMMA NUMBER LPAREN REGISTER RPAREN { 
-        $$ = Instruction::CreateIType(Instruction::LB, $2, $6, $4);
+    | LB REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::LB);
+        inst->addRegister($2);      // rd
+        inst->addImmediate($4);     // offset
+        inst->addRegister($6);      // base
+        $$ = std::move(inst);
     }
     | JALR REGISTER COMMA REGISTER COMMA NUMBER { 
         $$ = Instruction::CreateIType(Instruction::JALR, $2, $4, $6);
@@ -222,9 +233,14 @@ b_type_inst:
     }
     ;
 
-/* U-type: lui */
+/* U-type: lui, auipc */
 u_type_inst:
-    /* Empty for now */
+    LUI REGISTER COMMA NUMBER {
+        auto inst = std::make_unique<Instruction>(Instruction::LUI);
+        inst->addRegister($2);
+        inst->addImmediate($4);
+        $$ = std::move(inst);
+    }
     ;
 
 /* J-type: jal */
@@ -244,6 +260,34 @@ special_inst:
     }
     | ECALL { 
         $$ = std::make_unique<Instruction>(Instruction::ECALL); 
+    }
+    | LA REGISTER COMMA IDENTIFIER {
+        auto inst = std::make_unique<Instruction>(Instruction::LA);
+        inst->addRegister($2);
+        inst->addLabel($4);
+        $$ = std::move(inst);
+    }
+    | LI REGISTER COMMA NUMBER {
+        auto inst = std::make_unique<Instruction>(Instruction::LI);
+        inst->addRegister($2);
+        inst->addImmediate($4);
+        $$ = std::move(inst);
+    }
+    | MV REGISTER COMMA REGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::MV);
+        inst->addRegister($2);
+        inst->addRegister($4);
+        $$ = std::move(inst);
+    }
+    | JR REGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::JR);
+        inst->addRegister($2);
+        $$ = std::move(inst);
+    }
+    | CALL IDENTIFIER {
+        auto inst = std::make_unique<Instruction>(Instruction::CALL);
+        inst->addLabel($2);
+        $$ = std::move(inst);
     }
     ;
 
