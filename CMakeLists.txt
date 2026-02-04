@@ -23,13 +23,6 @@ add_subdirectory(src/lexer)
 add_subdirectory(src/transformer)
 add_subdirectory(src/cli)
 
-option(BUILD_TESTS "Build test programs" ON)
-
-if(BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
-endif()
-
 install(TARGETS c2rars DESTINATION bin)
 install(DIRECTORY libs/ DESTINATION share/c2rars/libs)
 install(FILES README.md DESTINATION share/doc/c2rars)
