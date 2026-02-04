@@ -37,17 +37,14 @@ ALNUM       [a-zA-Z0-9_]
 ".half"         { return yy::parser::make_HALF_DIRECTIVE(); }
 ".space"        { return yy::parser::make_SPACE_DIRECTIVE(); }
 
-    /* GCC directives to ignore */
-".file"[^\n]*   { /* ignore */ }
-".option"[^\n]* { /* ignore */ }
-".attribute"[^\n]* { /* ignore */ }
-".type"[^\n]*   { /* ignore */ }
-".size"[^\n]*   { /* ignore */ }
-".ident"[^\n]*  { /* ignore */ }
-".section"[^\n]* { /* ignore */ }
-"#APP"[^\n]*    { /* ignore inline asm markers */ }
-"#NO_APP"[^\n]* { /* ignore inline asm markers */ }
-"nop"           { /* ignore nop for now */ }
+[ \t]*".file"[^\n]*   { /* ignore */ }
+[ \t]*".option"[^\n]* { /* ignore */ }
+[ \t]*".attribute"[^\n]* { /* ignore */ }
+[ \t]*".type"[^\n]*   { /* ignore */ }
+[ \t]*".size"[^\n]*   { /* ignore */ }
+[ \t]*".ident"[^\n]*  { /* ignore */ }
+[ \t]*".section"[^\n]* { /* ignore */ }
+[ \t]*"nop"           { /* ignore nop */ }
 
 "add"           { return yy::parser::make_ADD(); }
 "addi"          { return yy::parser::make_ADDI(); }
@@ -65,6 +62,10 @@ ALNUM       [a-zA-Z0-9_]
 "sw"            { return yy::parser::make_SW(); }
 "lb"            { return yy::parser::make_LB(); }
 "sb"            { return yy::parser::make_SB(); }
+"lbu"           { return yy::parser::make_LBU(); }
+"lh"            { return yy::parser::make_LH(); }
+"lhu"           { return yy::parser::make_LHU(); }
+"sh"            { return yy::parser::make_SH(); }
 "beq"           { return yy::parser::make_BEQ(); }
 "bne"           { return yy::parser::make_BNE(); }
 "blt"           { return yy::parser::make_BLT(); }
@@ -103,6 +104,26 @@ ALNUM       [a-zA-Z0-9_]
 {LETTER}{ALNUM}*":"     {
     std::string label(yytext, yyleng - 1);
     return yy::parser::make_LABEL_DEF(label);
+}
+
+"%hi"[ \t]*"("[^)]*")"  { 
+    std::string text(yytext);
+    size_t start = text.find('(') + 1;
+    size_t end = text.find(')');
+    std::string label = text.substr(start, end - start);
+    return yy::parser::make_IDENTIFIER(label);
+}
+
+"%lo"[ \t]*"("[^)]*")"  { 
+    std::string text(yytext);
+    size_t start = text.find('(') + 1;
+    size_t end = text.find(')');
+    std::string label = text.substr(start, end - start);
+    return yy::parser::make_IDENTIFIER(label);
+}
+
+"."{LETTER}{ALNUM}*     { 
+    return yy::parser::make_IDENTIFIER(std::string(yytext));
 }
 
 {LETTER}{ALNUM}*        { 

@@ -198,6 +198,48 @@ bool Transformer::transformAST(ast::Program* ast) {
     
     removeUnsupportedDirectivesFromAST(ast);
     
+    for (size_t i = 0; i + 1 < ast->statements.size(); i++) {
+        auto* inst1 = dynamic_cast<Instruction*>(ast->statements[i].get());
+        auto* inst2 = dynamic_cast<Instruction*>(ast->statements[i + 1].get());
+        
+        if (inst1 && inst2 && 
+            inst1->opcode == Instruction::LUI && 
+            inst2->opcode == Instruction::ADDI &&
+            inst1->operands.size() >= 2 &&
+            inst2->operands.size() >= 3) {
+            
+            auto* luiLabel = dynamic_cast<LabelOperand*>(inst1->operands[1].get());
+            if (!luiLabel) continue;
+            
+            auto* addiLabel = dynamic_cast<LabelOperand*>(inst2->operands[2].get());
+            if (!addiLabel || luiLabel->getName() != addiLabel->getName()) continue;
+            
+            auto* luiReg = dynamic_cast<Register*>(inst1->operands[0].get());
+            auto* addiSrc = dynamic_cast<Register*>(inst2->operands[1].get());
+            if (!luiReg || !addiSrc || luiReg->getNumber() != addiSrc->getNumber()) continue;
+            
+            if (m_verbose) {
+                std::cout << "  Converting lui+addi pair to la: " << luiLabel->getName() << std::endl;
+            }
+            
+            std::string labelName = luiLabel->getName();
+            auto* addiDest = dynamic_cast<Register*>(inst2->operands[0].get());
+            int destReg = addiDest->getNumber();
+            
+            inst1->opcode = Instruction::LA;
+            inst1->operands.clear();
+            inst1->addRegister(destReg);
+            inst1->addLabel(labelName);
+            
+            if (m_verbose) {
+                std::cout << "  Converted lui+addi to la x" << destReg 
+                          << ", " << labelName << std::endl;
+            }
+            
+            ast->statements.erase(ast->statements.begin() + i + 1);
+        }
+    }
+    
     std::string currentFunction;
     for (size_t i = 0; i < ast->statements.size(); i++) {
         auto& stmt = ast->statements[i];
@@ -216,7 +258,6 @@ bool Transformer::transformAST(ast::Program* ast) {
                               << " in main() with exit syscall" << std::endl;
                 }
                 
-                // Replace ret with: li a7, 10; ecall
                 inst->opcode = Instruction::LI;
                 inst->operands.clear();
                 inst->addRegister(17);
@@ -332,23 +373,11 @@ void Transformer::generateCodeFromAST(const ast::Program* ast) {
     
     m_outputLines.clear();
     
-    std::string currentSection;
-    
     for (const auto& stmt : ast->statements) {
         std::stringstream ss;
         
         if (auto* dir = dynamic_cast<Directive*>(stmt.get())) {
             std::string dirStr = dir->typeToString();
-            
-            if (dir->type == Directive::TEXT || dir->type == Directive::DATA || dir->type == Directive::BSS) {
-                if (dirStr != currentSection) {
-                    if (!currentSection.empty()) {
-                        m_outputLines.push_back("");
-                    }
-                    currentSection = dirStr;
-                }
-            }
-            
             ss << dirStr;
             if (!dir->argument.empty()) {
                 ss << " " << dir->argument;
@@ -366,8 +395,12 @@ void Transformer::generateCodeFromAST(const ast::Program* ast) {
             
             bool isMemoryAccess = (inst->opcode == Instruction::LW || 
                                    inst->opcode == Instruction::LB ||
+                                   inst->opcode == Instruction::LBU ||
+                                   inst->opcode == Instruction::LH ||
+                                   inst->opcode == Instruction::LHU ||
                                    inst->opcode == Instruction::SW || 
-                                   inst->opcode == Instruction::SB);
+                                   inst->opcode == Instruction::SB ||
+                                   inst->opcode == Instruction::SH);
             
             if (isMemoryAccess && inst->getOperandCount() == 3) {
                 auto* op0 = inst->getOperand(0);
@@ -415,6 +448,63 @@ void Transformer::generateCodeFromAST(const ast::Program* ast) {
     
     if (m_verbose) {
         std::cout << "Generated lines: " << m_outputLines.size() << std::endl;
+    }
+    
+    std::vector<std::string> dataLines;
+    std::vector<std::string> mainLines;
+    std::vector<std::string> otherTextLines;
+    
+    std::string section;
+    bool inMain = false;
+    std::string prevLine;
+    
+    for (const auto& line : m_outputLines) {
+        if (line == ".data") { section = "data"; continue; }
+        if (line == ".text") { section = "text"; continue; }
+        
+        if (line.find(".string") == 0 || line.find(".asciz") == 0) {
+            if (!prevLine.empty() && prevLine.back() == ':') {
+                // Pop label from its current location
+                if (!otherTextLines.empty() && otherTextLines.back() == prevLine) {
+                    otherTextLines.pop_back();
+                }
+                dataLines.push_back(prevLine);
+            }
+            dataLines.push_back(line);
+            prevLine = line;
+            continue;
+        }
+        
+        if (line == ".globl main") { inMain = true; prevLine = line; continue; }
+        if (line == "main:") { inMain = true; mainLines.push_back(line); prevLine = line; continue; }
+        
+        if (!line.empty() && line.back() == ':' && line != "main:") {
+            inMain = false;
+        }
+        
+        if (section == "data") {
+            dataLines.push_back(line);
+        } else if (section == "text") {
+            (inMain ? mainLines : otherTextLines).push_back(line);
+        }
+        
+        prevLine = line;
+    }
+
+    m_outputLines.clear();
+    
+    if (!dataLines.empty()) {
+        m_outputLines.push_back(".data");
+        m_outputLines.insert(m_outputLines.end(), dataLines.begin(), dataLines.end());
+        m_outputLines.push_back("");
+    }
+    
+    if (!mainLines.empty() || !otherTextLines.empty()) {
+        m_outputLines.push_back(".text");
+        m_outputLines.push_back(".globl main");
+        m_outputLines.insert(m_outputLines.end(), mainLines.begin(), mainLines.end());
+        if (!mainLines.empty() && !otherTextLines.empty()) m_outputLines.push_back("");
+        m_outputLines.insert(m_outputLines.end(), otherTextLines.begin(), otherTextLines.end());
     }
 }
 

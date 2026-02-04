@@ -49,7 +49,7 @@ std::unique_ptr<Program> rootProgram;
 %token ADD ADDI SUB MUL DIV REM
 %token AND OR XOR
 %token SLL SRL SRA
-%token LW SW LB SB
+%token LW SW LB SB LBU LH LHU SH
 %token BEQ BNE BLT BGE
 %token JAL JALR RET ECALL
 %token LA LI MV JR LUI CALL
@@ -187,6 +187,13 @@ i_type_inst:
     ADDI REGISTER COMMA REGISTER COMMA NUMBER { 
         $$ = Instruction::CreateIType(Instruction::ADDI, $2, $4, $6);
     }
+    | ADDI REGISTER COMMA REGISTER COMMA IDENTIFIER {
+        auto inst = std::make_unique<Instruction>(Instruction::ADDI);
+        inst->addRegister($2);
+        inst->addRegister($4);
+        inst->addLabel($6);
+        $$ = std::move(inst);
+    }
     | LW REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
         // Load needs [rd, imm, rs1] order for transformer compatibility  
         auto inst = std::make_unique<Instruction>(Instruction::LW);
@@ -202,6 +209,27 @@ i_type_inst:
         inst->addRegister($6);      // base
         $$ = std::move(inst);
     }
+    | LBU REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::LBU);
+        inst->addRegister($2);
+        inst->addImmediate($4);
+        inst->addRegister($6);
+        $$ = std::move(inst);
+    }
+    | LH REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::LH);
+        inst->addRegister($2);
+        inst->addImmediate($4);
+        inst->addRegister($6);
+        $$ = std::move(inst);
+    }
+    | LHU REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::LHU);
+        inst->addRegister($2);
+        inst->addImmediate($4);
+        inst->addRegister($6);
+        $$ = std::move(inst);
+    }
     | JALR REGISTER COMMA REGISTER COMMA NUMBER { 
         $$ = Instruction::CreateIType(Instruction::JALR, $2, $4, $6);
     }
@@ -214,6 +242,9 @@ s_type_inst:
     }
     | SB REGISTER COMMA NUMBER LPAREN REGISTER RPAREN { 
         $$ = Instruction::CreateSType(Instruction::SB, $2, $6, $4);
+    }
+    | SH REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
+        $$ = Instruction::CreateSType(Instruction::SH, $2, $6, $4);
     }
     ;
 
@@ -239,6 +270,12 @@ u_type_inst:
         auto inst = std::make_unique<Instruction>(Instruction::LUI);
         inst->addRegister($2);
         inst->addImmediate($4);
+        $$ = std::move(inst);
+    }
+    | LUI REGISTER COMMA IDENTIFIER {
+        auto inst = std::make_unique<Instruction>(Instruction::LUI);
+        inst->addRegister($2);
+        inst->addLabel($4);
         $$ = std::move(inst);
     }
     ;
