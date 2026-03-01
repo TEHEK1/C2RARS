@@ -463,11 +463,15 @@ void Transformer::generateCodeFromAST(const ast::Program* ast) {
         if (line == ".data") { section = "data"; continue; }
         if (line == ".text") { section = "text"; continue; }
         
-        if (line.find(".string") == 0 || line.find(".asciz") == 0) {
+        bool isDataDirective = (line.find(".string") == 0 || line.find(".asciz") == 0 ||
+                                 line.find(".word") == 0 || line.find(".byte") == 0 ||
+                                 line.find(".half") == 0 || line.find(".space") == 0);
+        if (isDataDirective && section == "text") {
             if (!prevLine.empty() && prevLine.back() == ':') {
-                // Pop label from its current location
                 if (!otherTextLines.empty() && otherTextLines.back() == prevLine) {
                     otherTextLines.pop_back();
+                } else if (!mainLines.empty() && mainLines.back() == prevLine) {
+                    mainLines.pop_back();
                 }
                 dataLines.push_back(prevLine);
             }
