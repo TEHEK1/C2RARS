@@ -138,7 +138,7 @@ public:
 class Instruction : public ASTNode {
 public:
     enum OpCode {
-        ADD, SUB, MUL, DIV, REM,
+        ADD, SUB, MUL, MULH, DIV, REM,
         AND, OR, XOR,
         SLL, SRL, SRA,
         ADDI, SLTI, XORI, ORI, ANDI,
@@ -241,6 +241,7 @@ public:
             case ADD: return "add";
             case SUB: return "sub";
             case MUL: return "mul";
+            case MULH: return "mulh";
             case DIV: return "div";
             case REM: return "rem";
             case AND: return "and";

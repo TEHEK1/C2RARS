@@ -46,13 +46,16 @@ std::unique_ptr<Program> rootProgram;
 %token WORD_DIRECTIVE BYTE_DIRECTIVE HALF_DIRECTIVE SPACE_DIRECTIVE
 
 /* Instruction tokens */
-%token ADD ADDI SUB MUL DIV REM
-%token AND OR XOR
-%token SLL SRL SRA
+%token ADD ADDI SUB MUL MULH DIV REM
+%token AND OR XOR ANDI ORI XORI
+%token SLL SRL SRA SLLI SRLI SRAI
+%token SLT SLTI SLTU
 %token LW SW LB SB LBU LH LHU SH
-%token BEQ BNE BLT BGE
+%token BEQ BNE BLT BGE BLTU BGEU
+%token BGT BLE BGTU BLEU
 %token JAL JALR RET ECALL
 %token LA LI MV JR LUI CALL
+%token J NOP NEG NOT_INST SEQZ SNEZ
 
 /* Operand tokens */
 %token <int> REGISTER
@@ -64,7 +67,7 @@ std::unique_ptr<Program> rootProgram;
 
 /* Nonterminal types */
 %type <ASTNodePtr> line
-%type <InstructionPtr> instruction r_type_inst i_type_inst s_type_inst b_type_inst u_type_inst j_type_inst special_inst
+%type <InstructionPtr> instruction r_type_inst i_type_inst s_type_inst b_type_inst u_type_inst j_type_inst special_inst pseudo_inst
 %type <DirectivePtr> directive
 %type <LabelPtr> label
 
@@ -143,6 +146,7 @@ instruction:
     | u_type_inst { $$ = std::move($1); }
     | j_type_inst { $$ = std::move($1); }
     | special_inst { $$ = std::move($1); }
+    | pseudo_inst { $$ = std::move($1); }
     ;
 
 /* R-type: add, sub, mul, etc. */
@@ -155,6 +159,9 @@ r_type_inst:
     }
     | MUL REGISTER COMMA REGISTER COMMA REGISTER { 
         $$ = Instruction::CreateRType(Instruction::MUL, $2, $4, $6);
+    }
+    | MULH REGISTER COMMA REGISTER COMMA REGISTER { 
+        $$ = Instruction::CreateRType(Instruction::MULH, $2, $4, $6);
     }
     | DIV REGISTER COMMA REGISTER COMMA REGISTER { 
         $$ = Instruction::CreateRType(Instruction::DIV, $2, $4, $6);
@@ -179,6 +186,12 @@ r_type_inst:
     }
     | SRA REGISTER COMMA REGISTER COMMA REGISTER { 
         $$ = Instruction::CreateRType(Instruction::SRA, $2, $4, $6);
+    }
+    | SLT REGISTER COMMA REGISTER COMMA REGISTER { 
+        $$ = Instruction::CreateRType(Instruction::SLTI, $2, $4, $6);
+    }
+    | SLTU REGISTER COMMA REGISTER COMMA REGISTER { 
+        $$ = Instruction::CreateRType(Instruction::SLTI, $2, $4, $6);
     }
     ;
 
@@ -233,6 +246,27 @@ i_type_inst:
     | JALR REGISTER COMMA REGISTER COMMA NUMBER { 
         $$ = Instruction::CreateIType(Instruction::JALR, $2, $4, $6);
     }
+    | SLLI REGISTER COMMA REGISTER COMMA NUMBER {
+        $$ = Instruction::CreateIType(Instruction::SLLI, $2, $4, $6);
+    }
+    | SRLI REGISTER COMMA REGISTER COMMA NUMBER {
+        $$ = Instruction::CreateIType(Instruction::SRLI, $2, $4, $6);
+    }
+    | SRAI REGISTER COMMA REGISTER COMMA NUMBER {
+        $$ = Instruction::CreateIType(Instruction::SRAI, $2, $4, $6);
+    }
+    | ANDI REGISTER COMMA REGISTER COMMA NUMBER {
+        $$ = Instruction::CreateIType(Instruction::ANDI, $2, $4, $6);
+    }
+    | ORI REGISTER COMMA REGISTER COMMA NUMBER {
+        $$ = Instruction::CreateIType(Instruction::ORI, $2, $4, $6);
+    }
+    | XORI REGISTER COMMA REGISTER COMMA NUMBER {
+        $$ = Instruction::CreateIType(Instruction::XORI, $2, $4, $6);
+    }
+    | SLTI REGISTER COMMA REGISTER COMMA NUMBER {
+        $$ = Instruction::CreateIType(Instruction::SLTI, $2, $4, $6);
+    }
     ;
 
 /* S-type: sw, sb */
@@ -262,6 +296,24 @@ b_type_inst:
     | BGE REGISTER COMMA REGISTER COMMA IDENTIFIER { 
         $$ = Instruction::CreateBType(Instruction::BGE, $2, $4, $6);
     }
+    | BLTU REGISTER COMMA REGISTER COMMA IDENTIFIER {
+        $$ = Instruction::CreateBType(Instruction::BLTU, $2, $4, $6);
+    }
+    | BGEU REGISTER COMMA REGISTER COMMA IDENTIFIER {
+        $$ = Instruction::CreateBType(Instruction::BGEU, $2, $4, $6);
+    }
+    | BGT REGISTER COMMA REGISTER COMMA IDENTIFIER {
+        $$ = Instruction::CreateBType(Instruction::BGT, $2, $4, $6);
+    }
+    | BLE REGISTER COMMA REGISTER COMMA IDENTIFIER {
+        $$ = Instruction::CreateBType(Instruction::BLE, $2, $4, $6);
+    }
+    | BGTU REGISTER COMMA REGISTER COMMA IDENTIFIER {
+        $$ = Instruction::CreateBType(Instruction::BGTU, $2, $4, $6);
+    }
+    | BLEU REGISTER COMMA REGISTER COMMA IDENTIFIER {
+        $$ = Instruction::CreateBType(Instruction::BLEU, $2, $4, $6);
+    }
     ;
 
 /* U-type: lui, auipc */
@@ -287,6 +339,11 @@ j_type_inst:
     }
     | JAL IDENTIFIER { 
         $$ = Instruction::CreateJType(Instruction::JAL, 1, $2);
+    }
+    | J IDENTIFIER {
+        auto inst = std::make_unique<Instruction>(Instruction::J);
+        inst->addLabel($2);
+        $$ = std::move(inst);
     }
     ;
 
@@ -324,6 +381,36 @@ special_inst:
     | CALL IDENTIFIER {
         auto inst = std::make_unique<Instruction>(Instruction::CALL);
         inst->addLabel($2);
+        $$ = std::move(inst);
+    }
+    ;
+
+pseudo_inst:
+    NOP {
+        $$ = std::make_unique<Instruction>(Instruction::NOP);
+    }
+    | NEG REGISTER COMMA REGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::NEG);
+        inst->addRegister($2);
+        inst->addRegister($4);
+        $$ = std::move(inst);
+    }
+    | NOT_INST REGISTER COMMA REGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::NOT);
+        inst->addRegister($2);
+        inst->addRegister($4);
+        $$ = std::move(inst);
+    }
+    | SEQZ REGISTER COMMA REGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::SEQZ);
+        inst->addRegister($2);
+        inst->addRegister($4);
+        $$ = std::move(inst);
+    }
+    | SNEZ REGISTER COMMA REGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::SNEZ);
+        inst->addRegister($2);
+        inst->addRegister($4);
         $$ = std::move(inst);
     }
     ;

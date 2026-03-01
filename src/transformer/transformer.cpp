@@ -245,7 +245,8 @@ bool Transformer::transformAST(ast::Program* ast) {
         auto& stmt = ast->statements[i];
         
         if (auto* lbl = dynamic_cast<Label*>(stmt.get())) {
-            currentFunction = lbl->name;
+            if (lbl->name.empty() || lbl->name[0] != '.')
+                currentFunction = lbl->name;
         }
         
         if (auto* inst = dynamic_cast<Instruction*>(stmt.get())) {
