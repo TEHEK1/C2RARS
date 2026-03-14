@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake flex bison gcc-riscv64-unknown-elf
+          sudo apt-get install -y cmake flex libfl-dev bison gcc-riscv64-unknown-elf
 
       - name: Set up Java (for RARS)
         uses: actions/setup-java@v4
