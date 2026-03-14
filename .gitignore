@@ -1,0 +1,5 @@
+build/
+.cache/
+examples/*.asm
+*_temp.s
+*.o

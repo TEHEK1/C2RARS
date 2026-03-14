@@ -75,6 +75,7 @@ print_int:
 	lw x10, -20(x8)
 	li x17, 1
 	ecall
+	nop
 	lw x1, 28(x2)
 	lw x8, 24(x2)
 	addi x2, x2, 32
@@ -88,6 +89,7 @@ print_string:
 	lw x10, -20(x8)
 	li x17, 4
 	ecall
+	nop
 	lw x1, 28(x2)
 	lw x8, 24(x2)
 	addi x2, x2, 32
@@ -103,6 +105,7 @@ print_char:
 	mv x10, x15
 	li x17, 11
 	ecall
+	nop
 	lw x1, 28(x2)
 	lw x8, 24(x2)
 	addi x2, x2, 32

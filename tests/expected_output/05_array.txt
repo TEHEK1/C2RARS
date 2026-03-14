@@ -1,0 +1,8 @@
+Array Operations Demo
+=====================
+
+Array: [10, 25, 7, 42, 15]
+
+Maximum: 42
+Sum: 99
+Average: 19

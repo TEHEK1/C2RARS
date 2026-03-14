@@ -21,14 +21,14 @@ void printHelp() {
     std::cout << "Options:\n";
     std::cout << "  -i, --input <file>      Input C file\n";
     std::cout << "  -o, --output <file>     Output assembly file\n";
-    std::cout << "  -c, --compiler <name>   Compiler (gcc/clang), default is gcc\n";
+    std::cout << "  -c, --compiler <name>   Cross-compiler command (or set RISCV_GCC env var)\n";
     std::cout << "  -v, --verbose           Verbose output\n";
     std::cout << "  -h, --help              Show this help\n";
     std::cout << "      --version           Show version\n";
     std::cout << "\nExamples:\n";
     std::cout << "  c2rars -i program.c -o program.asm\n";
     std::cout << "  c2rars -i test.c -o test.asm -v\n";
-    std::cout << "  c2rars --input hello.c --compiler clang --verbose\n";
+    std::cout << "  c2rars -i hello.c -c riscv64-elf-gcc -v\n";
 }
 
 void printVersion() {
@@ -44,14 +44,10 @@ bool compileToAssembly(const std::string& inputFile, const std::string& tempAsmF
         std::cout << "Cross-compiling " << inputFile << " to " << tempAsmFile << std::endl;
     }
 
-    std::string cmd;
-    if (compiler == "gcc") {
-        cmd = "riscv64-elf-gcc -S -march=rv32i -mabi=ilp32 -O0 -o " 
-              + tempAsmFile + " " + inputFile;
-    } else {
-        std::cerr << "Unknown compiler: " << compiler << std::endl;
-        return false;
-    }
+    std::string cmd = compiler + " -S -march=rv32im -mabi=ilp32 -O0"
+          " -isystem " C2RARS_INCLUDE_DIR
+          " -isystem " C2RARS_SOURCE_INCLUDE_DIR
+          " -o " + tempAsmFile + " " + inputFile;
 
     if (verbose) {
         std::cout << "Executing: " << cmd << std::endl;
@@ -69,7 +65,9 @@ bool compileToAssembly(const std::string& inputFile, const std::string& tempAsmF
 int main(int argc, char* argv[]) {
     std::string inputFile;
     std::string outputFile;
-    std::string compiler = "gcc";
+    std::string compiler = C2RARS_CROSS_COMPILER;
+    if (const char* env = std::getenv("RISCV_GCC"))
+        compiler = env;
     bool verbose = false;
 
     for (int i = 1; i < argc; i++) {

@@ -66,6 +66,7 @@ print_int:
 	lw x10, -20(x8)
 	li x17, 1
 	ecall
+	nop
 	lw x1, 28(x2)
 	lw x8, 24(x2)
 	addi x2, x2, 32
@@ -79,6 +80,7 @@ print_string:
 	lw x10, -20(x8)
 	li x17, 4
 	ecall
+	nop
 	lw x1, 28(x2)
 	lw x8, 24(x2)
 	addi x2, x2, 32
@@ -94,6 +96,7 @@ print_char:
 	mv x10, x15
 	li x17, 11
 	ecall
+	nop
 	lw x1, 28(x2)
 	lw x8, 24(x2)
 	addi x2, x2, 32
@@ -107,7 +110,9 @@ factorial:
 	sw x10, -20(x8)
 	lw x14, -20(x8)
 	li x15, 1
+	bgt x14, x15, .L5
 	li x15, 1
+	j .L6
 .L5:
 	lw x15, -20(x8)
 	addi x15, x15, -1
@@ -132,7 +137,9 @@ fibonacci:
 	sw x10, -20(x8)
 	lw x14, -20(x8)
 	li x15, 1
+	bgt x14, x15, .L8
 	lw x15, -20(x8)
+	j .L9
 .L8:
 	lw x15, -20(x8)
 	addi x15, x15, -1
@@ -163,6 +170,7 @@ power:
 	li x15, 1
 	sw x15, -20(x8)
 	sw x0, -24(x8)
+	j .L11
 .L12:
 	lw x14, -20(x8)
 	lw x15, -36(x8)

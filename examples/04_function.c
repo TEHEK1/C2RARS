@@ -1,23 +1,7 @@
 // Example 4: Function calls
 // Demonstrates function definitions and calls
 
-static inline void print_int(int value) {
-    register int a0 asm("a0") = value;
-    register int a7 asm("a7") = 1;
-    asm volatile ("ecall" : : "r"(a0), "r"(a7));
-}
-
-static inline void print_string(const char* str) {
-    register const char* a0 asm("a0") = str;
-    register int a7 asm("a7") = 4;
-    asm volatile ("ecall" : : "r"(a0), "r"(a7));
-}
-
-static inline void print_char(char c) {
-    register int a0 asm("a0") = c;
-    register int a7 asm("a7") = 11;
-    asm volatile ("ecall" : : "r"(a0), "r"(a7));
-}
+#include <c2rars/rars_io.h>
 
 // Factorial function
 int factorial(int n) {

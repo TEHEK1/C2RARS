@@ -24,5 +24,6 @@ add_subdirectory(src/transformer)
 add_subdirectory(src/cli)
 
 install(TARGETS c2rars DESTINATION bin)
+install(DIRECTORY include/c2rars DESTINATION include)
 install(DIRECTORY libs/ DESTINATION share/c2rars/libs)
 install(FILES README.md DESTINATION share/doc/c2rars)
