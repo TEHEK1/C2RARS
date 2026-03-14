@@ -1,7 +1,9 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <cstdio>
 #include <fstream>
+#include <memory>
 #include "../transformer/transformer.h"
 #include "../utils/file_utils.h"
 #include "scanner.h"
@@ -13,128 +15,127 @@ extern c2rars::ast::Program* getAST();
 
 using namespace c2rars;
 
-void printHelp() {
-    std::cout << "C2RARS - C to RARS assembler transformation\n";
-    std::cout << "Author: Kashapov A.V., BPI231\n\n";
-    std::cout << "Usage:\n";
-    std::cout << "  c2rars [options]\n\n";
-    std::cout << "Options:\n";
-    std::cout << "  -i, --input <file>      Input C file\n";
-    std::cout << "  -o, --output <file>     Output assembly file\n";
-    std::cout << "  -c, --compiler <name>   Cross-compiler command (or set RISCV_GCC env var)\n";
-    std::cout << "  -v, --verbose           Verbose output\n";
-    std::cout << "  -h, --help              Show this help\n";
-    std::cout << "      --version           Show version\n";
-    std::cout << "\nExamples:\n";
-    std::cout << "  c2rars -i program.c -o program.asm\n";
-    std::cout << "  c2rars -i test.c -o test.asm -v\n";
-    std::cout << "  c2rars -i hello.c -c riscv64-elf-gcc -v\n";
+struct Options {
+    std::string inputFile;
+    std::string outputFile;
+    std::string compiler = C2RARS_CROSS_COMPILER;
+    bool verbose = false;
+};
+
+static void printHelp() {
+    std::cout <<
+        "C2RARS - C to RARS assembler transformation\n"
+        "Author: Kashapov A.V., BPI231\n\n"
+        "Usage:\n"
+        "  c2rars [options]\n\n"
+        "Options:\n"
+        "  -i, --input <file>      Input C file\n"
+        "  -o, --output <file>     Output assembly file\n"
+        "  -c, --compiler <name>   Cross-compiler command (or set RISCV_GCC env var)\n"
+        "  -v, --verbose           Verbose output\n"
+        "  -h, --help              Show this help\n"
+        "      --version           Show version\n"
+        "\nExamples:\n"
+        "  c2rars -i program.c -o program.asm\n"
+        "  c2rars -i test.c -o test.asm -v\n"
+        "  c2rars -i hello.c -c riscv64-elf-gcc -v\n";
 }
 
-void printVersion() {
-    std::cout << "C2RARS version 1.0.0\n";
-    std::cout << "Project: Transformation of programs obtained by C language\n";
-    std::cout << "         cross-compiler into RARS simulator assembler\n";
-    std::cout << "HSE University, Faculty of Computer Science, 2025-2026\n";
+static void printVersion() {
+    std::cout <<
+        "C2RARS version 1.0.0\n"
+        "Project: Transformation of programs obtained by C language\n"
+        "         cross-compiler into RARS simulator assembler\n"
+        "HSE University, Faculty of Computer Science, 2025-2026\n";
 }
 
-bool compileToAssembly(const std::string& inputFile, const std::string& tempAsmFile,
-                       const std::string& compiler, bool verbose) {
-    if (verbose) {
-        std::cout << "Cross-compiling " << inputFile << " to " << tempAsmFile << std::endl;
+static bool parseArgs(int argc, char* argv[], Options& opts) {
+    if (const char* env = std::getenv("RISCV_GCC"))
+        opts.compiler = env;
+
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+
+        if (arg == "-h" || arg == "--help") {
+            printHelp();
+            std::exit(0);
+        } else if (arg == "--version") {
+            printVersion();
+            std::exit(0);
+        } else if (arg == "-v" || arg == "--verbose") {
+            opts.verbose = true;
+        } else if ((arg == "-i" || arg == "--input") && i + 1 < argc) {
+            opts.inputFile = argv[++i];
+        } else if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
+            opts.outputFile = argv[++i];
+        } else if ((arg == "-c" || arg == "--compiler") && i + 1 < argc) {
+            opts.compiler = argv[++i];
+        } else {
+            std::cerr << "Unknown argument: " << arg << std::endl;
+            return false;
+        }
     }
 
-    std::string cmd = compiler + " -S -march=rv32im -mabi=ilp32 -O0"
-          " -isystem " C2RARS_INCLUDE_DIR
-          " -isystem " C2RARS_SOURCE_INCLUDE_DIR
-          " -o " + tempAsmFile + " " + inputFile;
-
-    if (verbose) {
-        std::cout << "Executing: " << cmd << std::endl;
-    }
-
-    int result = system(cmd.c_str());
-    if (result != 0) {
-        std::cerr << "Compilation error" << std::endl;
+    if (opts.inputFile.empty()) {
+        std::cerr << "Error: input file not specified" << std::endl;
         return false;
     }
+
+    if (opts.outputFile.empty())
+        opts.outputFile = utils::getBaseName(opts.inputFile) + ".asm";
 
     return true;
 }
 
-int main(int argc, char* argv[]) {
-    std::string inputFile;
-    std::string outputFile;
-    std::string compiler = C2RARS_CROSS_COMPILER;
-    if (const char* env = std::getenv("RISCV_GCC"))
-        compiler = env;
-    bool verbose = false;
+static bool crossCompile(const Options& opts, const std::string& tempAsmFile) {
+    if (opts.verbose)
+        std::cout << "Cross-compiling " << opts.inputFile << " to " << tempAsmFile << std::endl;
 
-    for (int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
-        
-        if (arg == "-h" || arg == "--help") {
-            printHelp();
-            return 0;
-        } else if (arg == "--version") {
-            printVersion();
-            return 0;
-        } else if (arg == "-v" || arg == "--verbose") {
-            verbose = true;
-        } else if ((arg == "-i" || arg == "--input") && i + 1 < argc) {
-            inputFile = argv[++i];
-        } else if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
-            outputFile = argv[++i];
-        } else if ((arg == "-c" || arg == "--compiler") && i + 1 < argc) {
-            compiler = argv[++i];
-        } else {
-            std::cerr << "Unknown argument: " << arg << std::endl;
-            printHelp();
-            return 1;
-        }
+    std::string cmd = opts.compiler + " -S -march=rv32im -mabi=ilp32 -O0"
+          " -isystem " C2RARS_INCLUDE_DIR
+          " -isystem " C2RARS_SOURCE_INCLUDE_DIR
+          " -o " + tempAsmFile + " " + opts.inputFile;
+
+    if (opts.verbose)
+        std::cout << "Executing: " << cmd << std::endl;
+
+    if (std::system(cmd.c_str()) != 0) {
+        std::cerr << "Compilation error" << std::endl;
+        return false;
     }
+    return true;
+}
 
-    if (inputFile.empty()) {
-        std::cerr << "Error: input file not specified" << std::endl;
-        printHelp();
+static bool hasExtension(const std::string& path, const std::string& ext) {
+    return path.size() > ext.size() &&
+           path.compare(path.size() - ext.size(), ext.size(), ext) == 0;
+}
+
+static int run(const Options& opts) {
+    if (!utils::fileExists(opts.inputFile)) {
+        std::cerr << "Error: file not found: " << opts.inputFile << std::endl;
         return 1;
     }
 
-    if (outputFile.empty()) {
-        outputFile = utils::getBaseName(inputFile) + ".asm";
-    }
+    bool isAssembly = hasExtension(opts.inputFile, ".s");
+    std::string tempAsmFile = isAssembly
+        ? opts.inputFile
+        : utils::getBaseName(opts.inputFile) + "_temp.s";
 
-    if (verbose) {
-        printVersion();
-        std::cout << "\nParameters:\n";
-        std::cout << "  Input file:  " << inputFile << "\n";
-        std::cout << "  Output file: " << outputFile << "\n";
-        std::cout << "  Compiler:    " << compiler << "\n\n";
-    }
-
-    if (!utils::fileExists(inputFile)) {
-        std::cerr << "Error: file not found: " << inputFile << std::endl;
-        return 1;
-    }
-
-    std::string tempAsmFile;
-    bool isAssembly = (inputFile.size() > 2 && inputFile.substr(inputFile.size() - 2) == ".s");
-    
     if (isAssembly) {
-        tempAsmFile = inputFile;
-        if (verbose) {
+        if (opts.verbose)
             std::cout << "Input is assembly file, using directly\n" << std::endl;
-        }
-    } else {
-        tempAsmFile = utils::getBaseName(inputFile) + "_temp.s";
-        if (!compileToAssembly(inputFile, tempAsmFile, compiler, verbose)) {
-            return 1;
-        }
+    } else if (!crossCompile(opts, tempAsmFile)) {
+        return 1;
     }
 
-    if (verbose) {
+    auto cleanupTemp = [&]() {
+        if (!isAssembly && !opts.verbose)
+            std::remove(tempAsmFile.c_str());
+    };
+
+    if (opts.verbose)
         std::cout << "Parsing assembly file..." << std::endl;
-    }
 
     std::ifstream asmInput(tempAsmFile);
     if (!asmInput.is_open()) {
@@ -142,48 +143,65 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    scanner = new Scanner(&asmInput);
+    auto scannerPtr = std::make_unique<Scanner>(&asmInput);
+    scanner = scannerPtr.get();
+
     yy::parser parser;
-    
     if (parser.parse() != 0) {
         std::cerr << "Error: parsing failed" << std::endl;
-        delete scanner;
+        scanner = nullptr;
+        cleanupTemp();
         return 1;
     }
-
-    delete scanner;
     scanner = nullptr;
 
     ast::Program* ast = getAST();
     if (!ast) {
         std::cerr << "Error: AST is empty" << std::endl;
+        cleanupTemp();
         return 1;
     }
 
-    if (verbose) {
+    if (opts.verbose) {
         std::cout << "AST constructed successfully" << std::endl;
         std::cout << "Transforming for RARS..." << std::endl;
     }
 
     Transformer transformer;
-    transformer.setVerbose(verbose);
+    transformer.setVerbose(opts.verbose);
 
     if (!transformer.transformAST(ast)) {
         std::cerr << "Transformation error" << std::endl;
+        cleanupTemp();
         return 1;
     }
 
-    if (!transformer.saveOutput(outputFile)) {
+    if (!transformer.saveOutput(opts.outputFile)) {
         std::cerr << "Error saving output" << std::endl;
+        cleanupTemp();
         return 1;
     }
 
-    if (!verbose) {
-        remove(tempAsmFile.c_str());
+    cleanupTemp();
+    std::cout << "Transformation completed successfully!\n"
+              << "Output saved to: " << opts.outputFile << std::endl;
+    return 0;
+}
+
+int main(int argc, char* argv[]) {
+    Options opts;
+    if (!parseArgs(argc, argv, opts)) {
+        printHelp();
+        return 1;
     }
 
-    std::cout << "Transformation completed successfully!\n";
-    std::cout << "Output saved to: " << outputFile << std::endl;
+    if (opts.verbose) {
+        printVersion();
+        std::cout << "\nParameters:\n"
+                  << "  Input file:  " << opts.inputFile << "\n"
+                  << "  Output file: " << opts.outputFile << "\n"
+                  << "  Compiler:    " << opts.compiler << "\n\n";
+    }
 
-    return 0;
+    return run(opts);
 }

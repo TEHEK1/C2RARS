@@ -3,54 +3,38 @@
 
 #include <string>
 #include <vector>
-#include <map>
 #include "ast.h"
 
 namespace c2rars {
 
-using namespace ast;
-
-struct Section {
-    std::string name;
-    std::vector<std::string> lines;
-};
-
 class Transformer {
 public:
-    Transformer();
-    ~Transformer();
-
-    bool loadAssemblyFile(const std::string& filename);
-
-    bool transform();
+    Transformer() = default;
+    ~Transformer() = default;
 
     bool transformAST(ast::Program* ast);
-
     bool saveOutput(const std::string& filename);
 
     void setVerbose(bool verbose) { m_verbose = verbose; }
 
 private:
-    void parseSections();
+    static constexpr int REG_A7 = 17;
+    static constexpr int RARS_PRINT_STRING = 4;
+    static constexpr int RARS_EXIT = 10;
+    static constexpr int LINUX_EXIT = 93;
+    static constexpr int LINUX_EXIT_GROUP = 94;
 
-    void removeUnsupportedDirectivesFromAST(ast::Program* ast);
-
-    void removeUnsupportedDirectives();
-
-    void adaptSyntax();
-
-    void includeLibraries();
-
-    void replaceSyscalls();
-
+    void removeUnsupportedDirectives(ast::Program* ast);
+    void foldLuiAddiPairs(ast::Program* ast);
+    void replaceMainReturn(ast::Program* ast);
     bool processInstruction(ast::Instruction* inst);
 
     void generateCodeFromAST(const ast::Program* ast);
+    std::string serializeNode(const ast::ASTNode* node) const;
+    void reorganizeSections();
 
-    std::vector<std::string> m_inputLines;
     std::vector<std::string> m_outputLines;
-    std::map<std::string, Section> m_sections;
-    bool m_verbose;
+    bool m_verbose = false;
 };
 
 } // namespace c2rars

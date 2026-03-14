@@ -4,64 +4,41 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <unordered_set>
 
 namespace c2rars {
 
 using namespace c2rars::ast;
 
-Transformer::Transformer() : m_verbose(false) {
-}
-
-Transformer::~Transformer() {
-}
-
-bool Transformer::loadAssemblyFile(const std::string& filename) {
-    if (m_verbose) {
-        std::cout << "Loading file: " << filename << std::endl;
-    }
-
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: failed to open file " << filename << std::endl;
+bool Transformer::transformAST(ast::Program* ast) {
+    if (!ast) {
+        std::cerr << "Error: AST is empty" << std::endl;
         return false;
     }
 
-    std::string line;
-    while (std::getline(file, line)) {
-        m_inputLines.push_back(line);
+    if (m_verbose)
+        std::cout << "Transforming AST..." << std::endl;
+
+    removeUnsupportedDirectives(ast);
+    foldLuiAddiPairs(ast);
+
+    for (auto& stmt : ast->statements) {
+        if (auto* inst = dynamic_cast<Instruction*>(stmt.get()))
+            processInstruction(inst);
     }
 
-    file.close();
+    replaceMainReturn(ast);
+    generateCodeFromAST(ast);
 
-    if (m_verbose) {
-        std::cout << "Loaded lines: " << m_inputLines.size() << std::endl;
-    }
-
-    return true;
-}
-
-bool Transformer::transform() {
-    if (m_verbose) {
-        std::cout << "Starting transformation..." << std::endl;
-    }
-
-    parseSections();
-    removeUnsupportedDirectives();
-    adaptSyntax();
-    replaceSyscalls();
-    includeLibraries();
-
-    if (m_verbose) {
-        std::cout << "Transformation completed successfully" << std::endl;
-    }
+    if (m_verbose)
+        std::cout << "AST transformation completed" << std::endl;
 
     return true;
 }
 
 bool Transformer::saveOutput(const std::string& filename) {
-    if (m_verbose) {
+    if (m_verbose)
         std::cout << "Saving output to: " << filename << std::endl;
-    }
 
     std::ofstream file(filename);
     if (!file.is_open()) {
@@ -69,446 +46,298 @@ bool Transformer::saveOutput(const std::string& filename) {
         return false;
     }
 
-    for (const auto& line : m_outputLines) {
+    for (const auto& line : m_outputLines)
         file << line << "\n";
-    }
-
-    file.close();
-
-    if (m_verbose) {
-        std::cout << "Output saved" << std::endl;
-    }
 
     return true;
 }
 
-void Transformer::parseSections() {
-    if (m_verbose) {
-        std::cout << "Parsing sections..." << std::endl;
-    }
+// --- AST transformation passes ---
 
-    std::string currentSection;
-    
-    for (const auto& line : m_inputLines) {
-        std::string trimmed = line;
-        trimmed.erase(0, trimmed.find_first_not_of(" \t"));
-        trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
-
-        if (trimmed.empty()) {
-            continue;
-        }
-
-        if (trimmed.find(".text") == 0) {
-            currentSection = ".text";
-        } else if (trimmed.find(".data") == 0) {
-            currentSection = ".data";
-        } else if (trimmed.find(".bss") == 0) {
-            currentSection = ".bss";
-        }
-
-        if (!currentSection.empty()) {
-            m_sections[currentSection].name = currentSection;
-            m_sections[currentSection].lines.push_back(line);
-        }
-    }
-
-    if (m_verbose) {
-        std::cout << "Found sections: " << m_sections.size() << std::endl;
-    }
-}
-
-void Transformer::removeUnsupportedDirectives() {
-    if (m_verbose) {
-        std::cout << "Removing unsupported directives..." << std::endl;
-    }
-
-    std::vector<std::string> unsupportedDirectives = {
-        ".file",
-        ".option",
-        ".attribute",
-        ".ident",
-        ".type",
-        ".size"
-    };
-
-    m_outputLines.clear();
-    
-    for (const auto& line : m_inputLines) {
-        bool shouldRemove = false;
-        
-        for (const auto& directive : unsupportedDirectives) {
-            if (line.find(directive) != std::string::npos) {
-                shouldRemove = true;
-                if (m_verbose) {
-                    std::cout << "  Removed directive: " << directive << std::endl;
-                }
-                break;
-            }
-        }
-        
-        if (!shouldRemove) {
-            m_outputLines.push_back(line);
-        }
-    }
-}
-
-void Transformer::adaptSyntax() {
-    if (m_verbose) {
-        std::cout << "Adapting syntax..." << std::endl;
-    }
-}
-
-void Transformer::replaceSyscalls() {
-    if (m_verbose) {
-        std::cout << "Replacing syscalls..." << std::endl;
-    }
-
-    std::vector<std::string> newLines;
-    
-    for (auto& line : m_outputLines) {
-        if (line.find("li a7, 93") != std::string::npos) {
-            newLines.push_back("\tli a7, 10\t# RARS exit");
-        } else {
-            newLines.push_back(line);
-        }
-    }
-    
-    m_outputLines = newLines;
-}
-
-void Transformer::includeLibraries() {
-    if (m_verbose) {
-        std::cout << "Including RARS libraries..." << std::endl;
-    }
-
-    std::vector<std::string> header;
-    
-    m_outputLines.insert(m_outputLines.begin(), header.begin(), header.end());
-}
-
-bool Transformer::transformAST(ast::Program* ast) {
-    if (!ast) {
-        std::cerr << "Error: AST is empty" << std::endl;
-        return false;
-    }
-    
-    if (m_verbose) {
-        std::cout << "Transforming AST..." << std::endl;
-    }
-    
-    removeUnsupportedDirectivesFromAST(ast);
-    
-    for (size_t i = 0; i + 1 < ast->statements.size(); i++) {
-        auto* inst1 = dynamic_cast<Instruction*>(ast->statements[i].get());
-        auto* inst2 = dynamic_cast<Instruction*>(ast->statements[i + 1].get());
-        
-        if (inst1 && inst2 && 
-            inst1->opcode == Instruction::LUI && 
-            inst2->opcode == Instruction::ADDI &&
-            inst1->operands.size() >= 2 &&
-            inst2->operands.size() >= 3) {
-            
-            auto* luiLabel = dynamic_cast<LabelOperand*>(inst1->operands[1].get());
-            if (!luiLabel) continue;
-            
-            auto* addiLabel = dynamic_cast<LabelOperand*>(inst2->operands[2].get());
-            if (!addiLabel || luiLabel->getName() != addiLabel->getName()) continue;
-            
-            auto* luiReg = dynamic_cast<Register*>(inst1->operands[0].get());
-            auto* addiSrc = dynamic_cast<Register*>(inst2->operands[1].get());
-            if (!luiReg || !addiSrc || luiReg->getNumber() != addiSrc->getNumber()) continue;
-            
-            if (m_verbose) {
-                std::cout << "  Converting lui+addi pair to la: " << luiLabel->getName() << std::endl;
-            }
-            
-            std::string labelName = luiLabel->getName();
-            auto* addiDest = dynamic_cast<Register*>(inst2->operands[0].get());
-            int destReg = addiDest->getNumber();
-            
-            inst1->opcode = Instruction::LA;
-            inst1->operands.clear();
-            inst1->addRegister(destReg);
-            inst1->addLabel(labelName);
-            
-            if (m_verbose) {
-                std::cout << "  Converted lui+addi to la x" << destReg 
-                          << ", " << labelName << std::endl;
-            }
-            
-            ast->statements.erase(ast->statements.begin() + i + 1);
-        }
-    }
-    
-    std::string currentFunction;
-    for (size_t i = 0; i < ast->statements.size(); i++) {
-        auto& stmt = ast->statements[i];
-        
-        if (auto* lbl = dynamic_cast<Label*>(stmt.get())) {
-            if (lbl->name.empty() || lbl->name[0] != '.')
-                currentFunction = lbl->name;
-        }
-        
-        if (auto* inst = dynamic_cast<Instruction*>(stmt.get())) {
-            processInstruction(inst);
-            
-            if (currentFunction == "main" && 
-                (inst->opcode == Instruction::RET || inst->opcode == Instruction::JR)) {
-                if (m_verbose) {
-                    std::cout << "  Replacing " << inst->opcodeToString() 
-                              << " in main() with exit syscall" << std::endl;
-                }
-                
-                inst->opcode = Instruction::LI;
-                inst->operands.clear();
-                inst->addRegister(17);
-                inst->addImmediate(10);
-                
-                auto ecall = std::make_unique<Instruction>(Instruction::ECALL);
-                ast->statements.insert(ast->statements.begin() + i + 1, std::move(ecall));
-                i++;
-            }
-        }
-    }
-    
-    generateCodeFromAST(ast);
-    
-    if (m_verbose) {
-        std::cout << "AST transformation completed" << std::endl;
-    }
-    
-    return true;
-}
-
-void Transformer::removeUnsupportedDirectivesFromAST(ast::Program* ast) {
-    if (m_verbose) {
+void Transformer::removeUnsupportedDirectives(ast::Program* ast) {
+    if (m_verbose)
         std::cout << "Removing unsupported directives from AST..." << std::endl;
-    }
-    
-    const std::vector<Directive::Type> unsupported = {
+
+    static const std::unordered_set<Directive::Type> unsupported = {
         Directive::SECTION,
         Directive::ALIGN
     };
-    
-    size_t removedCount = 0;
+
+    size_t before = ast->statements.size();
     ast->statements.erase(
         std::remove_if(ast->statements.begin(), ast->statements.end(),
-            [&unsupported, &removedCount, this](const std::unique_ptr<ASTNode>& stmt) {
-                if (auto* dir = dynamic_cast<Directive*>(stmt.get())) {
-                    for (auto type : unsupported) {
-                        if (dir->type == type) {
-                            removedCount++;
-                            if (m_verbose) {
-                                std::cout << "  Removed directive: " << dir->typeToString() << std::endl;
-                            }
-                            return true;
-                        }
-                    }
-                }
-                return false;
+            [&](const std::unique_ptr<ASTNode>& stmt) {
+                auto* dir = dynamic_cast<Directive*>(stmt.get());
+                if (!dir || unsupported.find(dir->type) == unsupported.end())
+                    return false;
+                if (m_verbose)
+                    std::cout << "  Removed directive: " << dir->typeToString() << std::endl;
+                return true;
             }),
         ast->statements.end()
     );
-    
-    if (m_verbose && removedCount > 0) {
-        std::cout << "  Total removed: " << removedCount << " directives" << std::endl;
+
+    if (m_verbose && ast->statements.size() < before)
+        std::cout << "  Removed " << (before - ast->statements.size()) << " directives" << std::endl;
+}
+
+void Transformer::foldLuiAddiPairs(ast::Program* ast) {
+    for (size_t i = 0; i + 1 < ast->statements.size(); i++) {
+        auto* lui = dynamic_cast<Instruction*>(ast->statements[i].get());
+        auto* addi = dynamic_cast<Instruction*>(ast->statements[i + 1].get());
+
+        if (!lui || !addi)
+            continue;
+        if (lui->opcode != Instruction::LUI || addi->opcode != Instruction::ADDI)
+            continue;
+        if (lui->operands.size() < 2 || addi->operands.size() < 3)
+            continue;
+
+        auto* luiLabel = dynamic_cast<LabelOperand*>(lui->operands[1].get());
+        auto* addiLabel = dynamic_cast<LabelOperand*>(addi->operands[2].get());
+        if (!luiLabel || !addiLabel || luiLabel->getName() != addiLabel->getName())
+            continue;
+
+        auto* luiReg = dynamic_cast<Register*>(lui->operands[0].get());
+        auto* addiSrc = dynamic_cast<Register*>(addi->operands[1].get());
+        if (!luiReg || !addiSrc || luiReg->getNumber() != addiSrc->getNumber())
+            continue;
+
+        auto* addiDest = dynamic_cast<Register*>(addi->operands[0].get());
+        int destReg = addiDest->getNumber();
+        std::string labelName = luiLabel->getName();
+
+        if (m_verbose)
+            std::cout << "  Folding lui+addi -> la x" << destReg << ", " << labelName << std::endl;
+
+        lui->opcode = Instruction::LA;
+        lui->operands.clear();
+        lui->addRegister(destReg);
+        lui->addLabel(labelName);
+
+        ast->statements.erase(ast->statements.begin() + static_cast<long>(i + 1));
+    }
+}
+
+void Transformer::replaceMainReturn(ast::Program* ast) {
+    std::string currentFunction;
+
+    for (size_t i = 0; i < ast->statements.size(); i++) {
+        auto& stmt = ast->statements[i];
+
+        if (auto* lbl = dynamic_cast<Label*>(stmt.get())) {
+            if (!lbl->name.empty() && lbl->name[0] != '.')
+                currentFunction = lbl->name;
+            continue;
+        }
+
+        if (currentFunction != "main")
+            continue;
+
+        auto* inst = dynamic_cast<Instruction*>(stmt.get());
+        if (!inst)
+            continue;
+        if (inst->opcode != Instruction::RET && inst->opcode != Instruction::JR)
+            continue;
+
+        if (m_verbose)
+            std::cout << "  Replacing " << inst->opcodeToString() << " in main() with exit syscall" << std::endl;
+
+        inst->opcode = Instruction::LI;
+        inst->operands.clear();
+        inst->addRegister(REG_A7);
+        inst->addImmediate(RARS_EXIT);
+
+        auto ecall = std::make_unique<Instruction>(Instruction::ECALL);
+        ast->statements.insert(ast->statements.begin() + static_cast<long>(i + 1), std::move(ecall));
+        i++;
     }
 }
 
 bool Transformer::processInstruction(ast::Instruction* inst) {
     if (!inst) return false;
-    
-    bool modified = false;
-    
+
     if (inst->opcode == Instruction::CALL && inst->getOperandCount() > 0) {
-        if (auto* label = dynamic_cast<LabelOperand*>(inst->getOperand(0))) {
-            const std::string& funcName = label->getName();
-            
-            if (funcName == "printf" || funcName == "puts") {
-                if (m_verbose) {
-                    std::cout << "  Replacing call " << funcName << " with RARS print_string syscall" << std::endl;
-                }
-                inst->opcode = Instruction::LI;
-                inst->operands.clear();
-                inst->addRegister(17);
-                inst->addImmediate(4);
-                modified = true;
-            }
-            else if (funcName == "exit") {
-                if (m_verbose) {
-                    std::cout << "  Replacing call exit with RARS exit syscall" << std::endl;
-                }
-                inst->opcode = Instruction::LI;
-                inst->operands.clear();
-                inst->addRegister(17);
-                inst->addImmediate(10);
-                modified = true;
-            }
+        auto* label = dynamic_cast<LabelOperand*>(inst->getOperand(0));
+        if (!label) return false;
+
+        const std::string& name = label->getName();
+        if (name == "printf" || name == "puts") {
+            if (m_verbose)
+                std::cout << "  Replacing call " << name << " with RARS print_string syscall" << std::endl;
+            inst->opcode = Instruction::LI;
+            inst->operands.clear();
+            inst->addRegister(REG_A7);
+            inst->addImmediate(RARS_PRINT_STRING);
+            return true;
         }
+        if (name == "exit") {
+            if (m_verbose)
+                std::cout << "  Replacing call exit with RARS exit syscall" << std::endl;
+            inst->opcode = Instruction::LI;
+            inst->operands.clear();
+            inst->addRegister(REG_A7);
+            inst->addImmediate(RARS_EXIT);
+            return true;
+        }
+        return false;
     }
-    
+
     if (inst->opcode == Instruction::LI && inst->getOperandCount() >= 2) {
-        if (auto* reg = dynamic_cast<Register*>(inst->getOperand(0))) {
-            if (reg->getNumber() == 17) {
-                if (auto* imm = dynamic_cast<Immediate*>(inst->getOperand(1))) {
-                    int syscallNum = imm->getValue();
-                    if (syscallNum == 93 || syscallNum == 94) {
-                        if (m_verbose) {
-                            std::cout << "  Replacing Linux syscall " << syscallNum << " with RARS exit (10)" << std::endl;
-                        }
-                        inst->operands[1] = std::make_unique<Immediate>(10);
-                        modified = true;
-                    }
-                }
+        auto* reg = dynamic_cast<Register*>(inst->getOperand(0));
+        auto* imm = dynamic_cast<Immediate*>(inst->getOperand(1));
+        if (reg && imm && reg->getNumber() == REG_A7) {
+            int val = imm->getValue();
+            if (val == LINUX_EXIT || val == LINUX_EXIT_GROUP) {
+                if (m_verbose)
+                    std::cout << "  Replacing Linux syscall " << val << " with RARS exit" << std::endl;
+                inst->operands[1] = std::make_unique<Immediate>(RARS_EXIT);
+                return true;
             }
         }
     }
-    
-    return modified;
+
+    return false;
+}
+
+// --- Code generation ---
+
+std::string Transformer::serializeNode(const ast::ASTNode* node) const {
+    std::ostringstream ss;
+
+    if (auto* dir = dynamic_cast<const Directive*>(node)) {
+        ss << dir->typeToString();
+        if (!dir->argument.empty())
+            ss << " " << dir->argument;
+        if (dir->numericArg != 0)
+            ss << " " << dir->numericArg;
+        return ss.str();
+    }
+
+    if (auto* lbl = dynamic_cast<const Label*>(node))
+        return lbl->name + ":";
+
+    auto* inst = dynamic_cast<const Instruction*>(node);
+    if (!inst)
+        return {};
+
+    ss << "\t" << inst->opcodeToString();
+
+    static const std::unordered_set<Instruction::OpCode> memOps = {
+        Instruction::LW, Instruction::LB, Instruction::LBU,
+        Instruction::LH, Instruction::LHU,
+        Instruction::SW, Instruction::SB, Instruction::SH
+    };
+
+    bool isMemory = memOps.count(inst->opcode) && inst->getOperandCount() == 3;
+
+    if (isMemory) {
+        auto* reg0 = dynamic_cast<const Register*>(inst->getOperand(0));
+        auto* imm = dynamic_cast<const Immediate*>(inst->getOperand(1));
+        auto* reg2 = dynamic_cast<const Register*>(inst->getOperand(2));
+
+        ss << " x" << reg0->getNumber()
+           << ", " << imm->getValue()
+           << "(x" << reg2->getNumber() << ")";
+    } else {
+        for (size_t i = 0; i < inst->getOperandCount(); i++) {
+            ss << (i == 0 ? " " : ", ");
+            const auto* op = inst->getOperand(i);
+            if (auto* reg = dynamic_cast<const Register*>(op))
+                ss << "x" << reg->getNumber();
+            else if (auto* imm = dynamic_cast<const Immediate*>(op))
+                ss << imm->getValue();
+            else if (auto* label = dynamic_cast<const LabelOperand*>(op))
+                ss << label->getName();
+        }
+    }
+
+    return ss.str();
 }
 
 void Transformer::generateCodeFromAST(const ast::Program* ast) {
-    if (m_verbose) {
+    if (m_verbose)
         std::cout << "Generating assembly code from AST..." << std::endl;
-    }
-    
+
     m_outputLines.clear();
-    
+    m_outputLines.reserve(ast->statements.size());
+
     for (const auto& stmt : ast->statements) {
-        std::stringstream ss;
-        
-        if (auto* dir = dynamic_cast<Directive*>(stmt.get())) {
-            std::string dirStr = dir->typeToString();
-            ss << dirStr;
-            if (!dir->argument.empty()) {
-                ss << " " << dir->argument;
-            }
-            if (dir->numericArg != 0) {
-                ss << " " << dir->numericArg;
-            }
-            m_outputLines.push_back(ss.str());
-        }
-        else if (auto* lbl = dynamic_cast<Label*>(stmt.get())) {
-            m_outputLines.push_back(lbl->name + ":");
-        }
-        else if (auto* inst = dynamic_cast<Instruction*>(stmt.get())) {
-            ss << "\t" << inst->opcodeToString();
-            
-            bool isMemoryAccess = (inst->opcode == Instruction::LW || 
-                                   inst->opcode == Instruction::LB ||
-                                   inst->opcode == Instruction::LBU ||
-                                   inst->opcode == Instruction::LH ||
-                                   inst->opcode == Instruction::LHU ||
-                                   inst->opcode == Instruction::SW || 
-                                   inst->opcode == Instruction::SB ||
-                                   inst->opcode == Instruction::SH);
-            
-            if (isMemoryAccess && inst->getOperandCount() == 3) {
-                auto* op0 = inst->getOperand(0);
-                auto* op1 = inst->getOperand(1);
-                auto* op2 = inst->getOperand(2);
-                
-                ss << " ";
-                if (auto* reg = dynamic_cast<Register*>(op0)) {
-                    ss << "x" << reg->getNumber();
-                }
-                
-                ss << ", ";
-                if (auto* imm = dynamic_cast<Immediate*>(op1)) {
-                    ss << imm->getValue();
-                }
-                
-                ss << "(";
-                if (auto* reg = dynamic_cast<Register*>(op2)) {
-                    ss << "x" << reg->getNumber();
-                }
-                ss << ")";
-            }
-            else {
-                for (size_t i = 0; i < inst->getOperandCount(); i++) {
-                    if (i == 0) ss << " ";
-                    else ss << ", ";
-                    
-                    auto* op = inst->getOperand(i);
-                    
-                    if (auto* reg = dynamic_cast<Register*>(op)) {
-                        ss << "x" << reg->getNumber();
-                    }
-                    else if (auto* imm = dynamic_cast<Immediate*>(op)) {
-                        ss << imm->getValue();
-                    }
-                else if (auto* label = dynamic_cast<LabelOperand*>(op)) {
-                    ss << label->getName();
-                }
-                }
-            }
-            
-            m_outputLines.push_back(ss.str());
-        }
+        std::string line = serializeNode(stmt.get());
+        if (!line.empty())
+            m_outputLines.push_back(std::move(line));
     }
-    
-    if (m_verbose) {
-        std::cout << "Generated lines: " << m_outputLines.size() << std::endl;
-    }
-    
+
+    if (m_verbose)
+        std::cout << "Generated " << m_outputLines.size() << " lines" << std::endl;
+
+    reorganizeSections();
+}
+
+void Transformer::reorganizeSections() {
+    static const std::unordered_set<std::string> dataDirectivePrefixes = {
+        ".string", ".asciz", ".word", ".byte", ".half", ".space"
+    };
+
+    auto isDataDirective = [&](const std::string& line) {
+        for (const auto& prefix : dataDirectivePrefixes)
+            if (line.compare(0, prefix.size(), prefix) == 0)
+                return true;
+        return false;
+    };
+
     std::vector<std::string> dataLines;
     std::vector<std::string> mainLines;
     std::vector<std::string> otherTextLines;
-    
+
     std::string section;
     bool inMain = false;
     std::string prevLine;
-    
+
     for (const auto& line : m_outputLines) {
         if (line == ".data") { section = "data"; continue; }
         if (line == ".text") { section = "text"; continue; }
-        
-        bool isDataDirective = (line.find(".string") == 0 || line.find(".asciz") == 0 ||
-                                 line.find(".word") == 0 || line.find(".byte") == 0 ||
-                                 line.find(".half") == 0 || line.find(".space") == 0);
-        if (isDataDirective && section == "text") {
+
+        if (isDataDirective(line) && section == "text") {
             if (!prevLine.empty() && prevLine.back() == ':') {
-                if (!otherTextLines.empty() && otherTextLines.back() == prevLine) {
-                    otherTextLines.pop_back();
-                } else if (!mainLines.empty() && mainLines.back() == prevLine) {
-                    mainLines.pop_back();
-                }
+                auto& target = inMain ? mainLines : otherTextLines;
+                if (!target.empty() && target.back() == prevLine)
+                    target.pop_back();
                 dataLines.push_back(prevLine);
             }
             dataLines.push_back(line);
             prevLine = line;
             continue;
         }
-        
+
         if (line == ".globl main") { inMain = true; prevLine = line; continue; }
         if (line == "main:") { inMain = true; mainLines.push_back(line); prevLine = line; continue; }
-        
-        if (!line.empty() && line.back() == ':' && line != "main:") {
+
+        if (!line.empty() && line.back() == ':' && line != "main:")
             inMain = false;
-        }
-        
-        if (section == "data") {
+
+        if (section == "data")
             dataLines.push_back(line);
-        } else if (section == "text") {
+        else if (section == "text")
             (inMain ? mainLines : otherTextLines).push_back(line);
-        }
-        
+
         prevLine = line;
     }
 
     m_outputLines.clear();
-    
+
     if (!dataLines.empty()) {
         m_outputLines.push_back(".data");
         m_outputLines.insert(m_outputLines.end(), dataLines.begin(), dataLines.end());
-        m_outputLines.push_back("");
+        m_outputLines.emplace_back();
     }
-    
+
     if (!mainLines.empty() || !otherTextLines.empty()) {
         m_outputLines.push_back(".text");
         m_outputLines.push_back(".globl main");
         m_outputLines.insert(m_outputLines.end(), mainLines.begin(), mainLines.end());
-        if (!mainLines.empty() && !otherTextLines.empty()) m_outputLines.push_back("");
+        if (!mainLines.empty() && !otherTextLines.empty())
+            m_outputLines.emplace_back();
         m_outputLines.insert(m_outputLines.end(), otherTextLines.begin(), otherTextLines.end());
     }
 }

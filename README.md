@@ -1,0 +1,202 @@
+# C2RARS
+
+Транслятор программ, полученных кросс-компилятором языка Си, в ассемблер симулятора RARS.
+
+**Курсовой проект** — НИУ ВШЭ, Факультет компьютерных наук, 2025–2026  
+**Автор:** Кашапов А.В., БПИ231
+
+## Описание
+
+C2RARS принимает на вход программу на языке Си, компилирует её RISC-V кросс-компилятором (GCC) в ассемблер, а затем трансформирует полученный код так, чтобы он корректно исполнялся в симуляторе [RARS](https://github.com/TheThirdOne/rars).
+
+Трансформация включает:
+
+- свёртку пар `lui`/`addi` (relocations `%hi`/`%lo`) в псевдоинструкцию `la`
+- замену Linux-системных вызовов (`ecall` с номерами 93/94) на RARS-совместимые (exit = 10)
+- подмену `ret`/`jr ra` в `main` на вызов `ecall` завершения
+- замену вызовов `printf`/`puts` на RARS-сисколл `print_string`
+- удаление директив, не поддерживаемых RARS (`.section`, `.align`)
+- перенос данных (`.word`, `.string`, …) из `.text` в `.data`
+- реорганизацию секций: `.data` → `.text` с `main` первым
+
+## Быстрый старт
+
+### Зависимости
+
+| Зависимость | Назначение |
+|---|---|
+| CMake >= 3.15 | система сборки |
+| Flex | лексический анализатор |
+| Bison >= 3.2 | синтаксический анализатор |
+| RISC-V GCC (`riscv64-unknown-elf-gcc` или `riscv64-elf-gcc`) | кросс-компилятор |
+| Java >= 11 | для запуска RARS (опционально, нужен для тестирования) |
+
+**Ubuntu/Debian:**
+
+```bash
+sudo apt-get install cmake flex libfl-dev bison gcc-riscv64-unknown-elf
+```
+
+**macOS (Homebrew):**
+
+```bash
+brew install cmake flex bison riscv-elf-gcc
+```
+
+### Сборка
+
+```bash
+mkdir -p build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+```
+
+Бинарный файл: `build/src/cli/c2rars`
+
+### Установка (опционально)
+
+```bash
+cmake --install build --prefix /usr/local
+```
+
+Это установит:
+- `c2rars` в `/usr/local/bin/`
+- `rars_io.h` в `/usr/local/include/c2rars/`
+
+## Использование
+
+```bash
+c2rars -i program.c -o program.asm
+```
+
+### Параметры
+
+| Флаг | Описание |
+|---|---|
+| `-i, --input <file>` | входной файл (.c или .s) |
+| `-o, --output <file>` | выходной .asm файл (по умолчанию: `<имя>.asm`) |
+| `-c, --compiler <name>` | имя кросс-компилятора |
+| `-v, --verbose` | подробный вывод |
+| `-h, --help` | справка |
+| `--version` | версия |
+
+### Выбор кросс-компилятора
+
+Приоритет (от низшего к высшему):
+
+1. **CMake auto-detect** — при сборке CMake ищет `riscv64-unknown-elf-gcc` / `riscv64-elf-gcc` и вкомпилирует найденный путь
+2. **Переменная окружения `RISCV_GCC`** — переопределяет дефолт в runtime
+3. **Флаг `-c`** — переопределяет дефолт в runtime
+
+```bash
+# Использовать конкретный компилятор
+c2rars -i test.c -c riscv64-elf-gcc
+
+# Или через переменную окружения
+export RISCV_GCC=riscv64-elf-gcc
+c2rars -i test.c
+```
+
+## Пример
+
+Исходный файл `hello.c`:
+
+```c
+#include <c2rars/rars_io.h>
+
+int main() {
+    print_string("Hello, world!\n");
+    return 0;
+}
+```
+
+Запуск:
+
+```bash
+c2rars -i hello.c -o hello.asm
+java -jar rars.jar nc hello.asm
+```
+
+Вывод:
+
+```
+Hello, world!
+```
+
+## Библиотека `rars_io.h`
+
+Заголовочный файл `include/c2rars/rars_io.h` предоставляет обёртки над RARS-сисколлами для использования в C-коде:
+
+| Функция | Описание |
+|---|---|
+| `print_int(int)` | вывод целого числа |
+| `print_string(const char*)` | вывод строки |
+| `print_char(char)` | вывод символа |
+| `read_int()` | чтение целого числа |
+| `read_char()` | чтение символа |
+
+Функции реализованы как `static inline` с использованием `asm volatile("ecall")` и компилируются напрямую в инструкции `ecall` с соответствующими номерами сисколлов.
+
+## Примеры
+
+В директории `examples/` находятся демонстрационные программы:
+
+| Файл | Описание |
+|---|---|
+| `01_hello.c` | вывод строки |
+| `02_arithmetic.c` | арифметические операции |
+| `03_loop.c` | циклы `for` и `while` |
+| `04_function.c` | рекурсия (факториал, Фибоначчи, степень) |
+| `05_array.c` | работа с массивами (максимум, сумма, среднее) |
+
+## Тестирование
+
+Интеграционные тесты запускают полный пайплайн: C → GCC → c2rars → RARS, и сравнивают вывод с эталонами в `tests/expected_output/`.
+
+```bash
+./scripts/test.sh            # базовый прогон
+./scripts/test.sh -v         # подробный вывод
+./scripts/test.sh --build    # пересобрать перед тестированием
+./scripts/test.sh --no-rars  # только трансформация (без RARS)
+./scripts/test.sh --example 03_loop  # один конкретный пример
+```
+
+## CI
+
+GitHub Actions запускается при пуше в `main` и на pull request'ах. Пайплайн:
+
+1. Установка зависимостей (cmake, flex, bison, riscv64 gcc, Java 17)
+2. Сборка c2rars
+3. Запуск `scripts/test.sh -v` — все 5 примеров
+
+## Структура проекта
+
+```
+├── include/
+│   ├── ast.h                  # AST — узлы синтаксического дерева
+│   ├── scanner.h              # интерфейс лексера (Flex)
+│   └── c2rars/
+│       └── rars_io.h          # RARS syscall обёртки для C
+├── src/
+│   ├── lexer/
+│   │   └── lexer.l            # Flex-спецификация лексера
+│   ├── parser/
+│   │   └── parser.y           # Bison-грамматика парсера
+│   ├── transformer/
+│   │   ├── transformer.h      # заголовок трансформатора
+│   │   └── transformer.cpp    # трансформация AST и кодогенерация
+│   ├── cli/
+│   │   └── main.cpp           # точка входа, CLI, пайплайн
+│   └── utils/
+│       ├── file_utils.h       # утилиты для работы с файлами
+│       └── file_utils.cpp
+├── examples/                  # демонстрационные C-программы
+├── tests/
+│   └── expected_output/       # эталонные выводы для тестов
+├── scripts/
+│   └── test.sh                # скрипт интеграционного тестирования
+├── libs/                      # RARS-библиотеки (asm)
+├── rars.jar                   # симулятор RARS
+├── CMakeLists.txt             # корневой CMake
+└── .github/workflows/ci.yml   # GitHub Actions CI
+```
