@@ -8,8 +8,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(BISON_EXECUTABLE /opt/homebrew/opt/bison/bin/bison)
-set(FLEX_EXECUTABLE /usr/bin/flex)
 find_package(BISON REQUIRED)
 find_package(FLEX REQUIRED)
 
