@@ -72,55 +72,127 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-run_test() {
+# Run a single-file test (one .c file -> one .asm)
+run_single_test() {
     local cfile="$1"
-    local name
-    name="$(basename "$cfile" .c)"
+    local name="$2"
+    local test_output_dir="$3"
 
-    local asm_file="${OUTPUT_DIR}/${name}.asm"
-    local actual_file="${OUTPUT_DIR}/${name}.actual.txt"
-    local expected_file="${EXPECTED_DIR}/${name}.txt"
+    local asm_file="${test_output_dir}/${name}.asm"
 
-    printf "  %-20s " "$name"
-
-    # Step 1: Transform C -> RARS assembly
     local c2rars_args=(-i "$cfile" -o "$asm_file")
     if $VERBOSE; then
         c2rars_args+=(-v)
     fi
 
-    if ! "$C2RARS" "${c2rars_args[@]}" >"${OUTPUT_DIR}/${name}.c2rars.log" 2>&1; then
+    if ! "$C2RARS" "${c2rars_args[@]}" >"${test_output_dir}/${name}.c2rars.log" 2>&1; then
         echo -e "${RED}FAIL${NC} (c2rars transformation failed)"
         if $VERBOSE; then
-            cat "${OUTPUT_DIR}/${name}.c2rars.log"
+            cat "${test_output_dir}/${name}.c2rars.log"
         fi
         FAIL=$((FAIL + 1))
-        return
+        return 1
     fi
 
     if [[ ! -f "$asm_file" ]]; then
         echo -e "${RED}FAIL${NC} (no .asm output produced)"
         FAIL=$((FAIL + 1))
+        return 1
+    fi
+
+    echo "$asm_file"
+    return 0
+}
+
+# Run test for an example directory
+run_test() {
+    local example_dir="$1"
+    local name
+    name="$(basename "$example_dir")"
+
+    local test_output_dir="${OUTPUT_DIR}/${name}"
+    mkdir -p "$test_output_dir"
+
+    local expected_file="${EXPECTED_DIR}/${name}.txt"
+
+    printf "  %-20s " "$name"
+
+    # Count .c files
+    local c_files=()
+    while IFS= read -r -d '' f; do
+        c_files+=("$f")
+    done < <(find "$example_dir" -maxdepth 1 -name '*.c' -print0 | sort -z)
+
+    if [[ ${#c_files[@]} -eq 0 ]]; then
+        echo -e "${YELLOW}SKIP${NC} (no .c files)"
+        SKIP=$((SKIP + 1))
         return
     fi
 
-    # Step 2: Run in RARS simulator
+    local asm_files=()
+    local transform_failed=false
+
+    if [[ ${#c_files[@]} -eq 1 ]]; then
+        # Single-file mode
+        local result
+        result=$(run_single_test "${c_files[0]}" "$name" "$test_output_dir") || { transform_failed=true; return; }
+        asm_files+=("$result")
+    else
+        # Multi-file mode: compile each .c file separately
+        for cfile in "${c_files[@]}"; do
+            local basename_c
+            basename_c="$(basename "$cfile" .c)"
+            local result
+            result=$(run_single_test "$cfile" "$basename_c" "$test_output_dir") || { transform_failed=true; return; }
+            asm_files+=("$result")
+        done
+
+        # Verify: non-main .asm files must NOT contain .globl main
+        # Also reorder: file with main: goes first (RARS requirement)
+        local main_asm=""
+        local other_asms=()
+        for asm_file in "${asm_files[@]}"; do
+            local basename_asm
+            basename_asm="$(basename "$asm_file" .asm)"
+            if grep -q '^main:' "$asm_file" 2>/dev/null; then
+                main_asm="$asm_file"
+            else
+                other_asms+=("$asm_file")
+                # This file has no main — it must not have .globl main
+                if grep -q '\.globl main' "$asm_file" 2>/dev/null; then
+                    echo -e "${RED}FAIL${NC} (${basename_asm}.asm has .globl main but no main function)"
+                    FAIL=$((FAIL + 1))
+                    return
+                fi
+            fi
+        done
+        # Rebuild asm_files with main first
+        asm_files=()
+        if [[ -n "$main_asm" ]]; then
+            asm_files+=("$main_asm")
+        fi
+        asm_files+=("${other_asms[@]}")
+    fi
+
+    # Run in RARS simulator
     if $NO_RARS; then
         echo -e "${GREEN}PASS${NC} (transform only)"
         PASS=$((PASS + 1))
         return
     fi
 
-    if ! java -jar "$RARS_JAR" nc "$asm_file" > "$actual_file" 2>"${OUTPUT_DIR}/${name}.rars.log"; then
+    local actual_file="${test_output_dir}/${name}.actual.txt"
+
+    if ! java -jar "$RARS_JAR" nc "${asm_files[@]}" > "$actual_file" 2>"${test_output_dir}/${name}.rars.log"; then
         echo -e "${RED}FAIL${NC} (RARS simulation error)"
         if $VERBOSE; then
-            cat "${OUTPUT_DIR}/${name}.rars.log"
+            cat "${test_output_dir}/${name}.rars.log"
         fi
         FAIL=$((FAIL + 1))
         return
     fi
 
-    # Step 3: Compare output with expected
+    # Compare output with expected
     if [[ ! -f "$expected_file" ]]; then
         echo -e "${YELLOW}SKIP${NC} (no expected output file)"
         SKIP=$((SKIP + 1))
@@ -155,16 +227,16 @@ echo ""
 echo "Results:"
 
 if [[ -n "$SINGLE" ]]; then
-    cfile="${EXAMPLES_DIR}/${SINGLE}.c"
-    if [[ ! -f "$cfile" ]]; then
-        echo -e "${RED}Error: example not found: $cfile${NC}"
+    example_dir="${EXAMPLES_DIR}/${SINGLE}"
+    if [[ ! -d "$example_dir" ]]; then
+        echo -e "${RED}Error: example directory not found: $example_dir${NC}"
         exit 1
     fi
-    run_test "$cfile"
+    run_test "$example_dir"
 else
-    for cfile in "$EXAMPLES_DIR"/*.c; do
-        [[ -f "$cfile" ]] || continue
-        run_test "$cfile"
+    for example_dir in "$EXAMPLES_DIR"/*/; do
+        [[ -d "$example_dir" ]] || continue
+        run_test "$example_dir"
     done
 fi
 

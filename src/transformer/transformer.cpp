@@ -334,10 +334,12 @@ void Transformer::reorganizeSections() {
 
     if (!mainLines.empty() || !otherTextLines.empty()) {
         m_outputLines.push_back(".text");
-        m_outputLines.push_back(".globl main");
-        m_outputLines.insert(m_outputLines.end(), mainLines.begin(), mainLines.end());
-        if (!mainLines.empty() && !otherTextLines.empty())
-            m_outputLines.emplace_back();
+        if (!mainLines.empty()) {
+            m_outputLines.push_back(".globl main");
+            m_outputLines.insert(m_outputLines.end(), mainLines.begin(), mainLines.end());
+            if (!otherTextLines.empty())
+                m_outputLines.emplace_back();
+        }
         m_outputLines.insert(m_outputLines.end(), otherTextLines.begin(), otherTextLines.end());
     }
 }

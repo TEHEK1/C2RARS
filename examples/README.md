@@ -7,7 +7,7 @@
 
 ```bash
 cd /Users/kamir22/Kurs/build
-./src/cli/c2rars -i ../examples/02_arithmetic.c -o 02_arithmetic.asm
+./src/cli/c2rars -i ../examples/02_arithmetic/02_arithmetic.c -o 02_arithmetic.asm
 ```
 
 ### Шаг 2: Открыть в RARS
@@ -55,4 +55,18 @@ a = 15, b = 27
 a + b = 42
 a - b = -12
 a * b = 405
+```
+
+---
+
+### 06_multifile - Раздельная компиляция
+Пример многофайловой программы: `main.c` вызывает функцию из `hi.c`.
+
+**Демонстрирует:**
+- Раздельная компиляция нескольких единиц трансляции
+- Вызов функций между файлами
+
+**Ожидаемый вывод:**
+```
+Hello, world!
 ```
