@@ -174,6 +174,14 @@ run_test() {
         asm_files+=("${other_asms[@]}")
     fi
 
+    # Check for expected output before running RARS (interactive examples
+    # would hang waiting for stdin if we tried to simulate them)
+    if [[ ! -f "$expected_file" ]]; then
+        echo -e "${GREEN}PASS${NC} (transform only, no expected output)"
+        PASS=$((PASS + 1))
+        return
+    fi
+
     # Run in RARS simulator
     if $NO_RARS; then
         echo -e "${GREEN}PASS${NC} (transform only)"
@@ -189,13 +197,6 @@ run_test() {
             cat "${test_output_dir}/${name}.rars.log"
         fi
         FAIL=$((FAIL + 1))
-        return
-    fi
-
-    # Compare output with expected
-    if [[ ! -f "$expected_file" ]]; then
-        echo -e "${YELLOW}SKIP${NC} (no expected output file)"
-        SKIP=$((SKIP + 1))
         return
     fi
 

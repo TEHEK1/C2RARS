@@ -22,9 +22,18 @@ bool Transformer::transformAST(ast::Program* ast) {
     removeUnsupportedDirectives(ast);
     foldLuiAddiPairs(ast);
 
-    for (auto& stmt : ast->statements) {
-        if (auto* inst = dynamic_cast<Instruction*>(stmt.get()))
-            processInstruction(inst);
+    for (size_t i = 0; i < ast->statements.size(); i++) {
+        auto* inst = dynamic_cast<Instruction*>(ast->statements[i].get());
+        if (!inst) continue;
+        bool needsEcall = false;
+        processInstruction(inst, needsEcall);
+        if (needsEcall) {
+            auto ecall = std::make_unique<Instruction>(Instruction::ECALL);
+            ast->statements.insert(
+                ast->statements.begin() + static_cast<long>(i + 1),
+                std::move(ecall));
+            i++;
+        }
     }
 
     replaceMainReturn(ast);
@@ -154,8 +163,9 @@ void Transformer::replaceMainReturn(ast::Program* ast) {
     }
 }
 
-bool Transformer::processInstruction(ast::Instruction* inst) {
+bool Transformer::processInstruction(ast::Instruction* inst, bool& needsEcall) {
     if (!inst) return false;
+    needsEcall = false;
 
     if (inst->opcode == Instruction::CALL && inst->getOperandCount() > 0) {
         auto* label = dynamic_cast<LabelOperand*>(inst->getOperand(0));
@@ -169,15 +179,37 @@ bool Transformer::processInstruction(ast::Instruction* inst) {
             inst->operands.clear();
             inst->addRegister(REG_A7);
             inst->addImmediate(RARS_PRINT_STRING);
+            needsEcall = true;
+            return true;
+        }
+        if (name == "putchar") {
+            if (m_verbose)
+                std::cout << "  Replacing call putchar with RARS print_char syscall" << std::endl;
+            inst->opcode = Instruction::LI;
+            inst->operands.clear();
+            inst->addRegister(REG_A7);
+            inst->addImmediate(RARS_PRINT_CHAR);
+            needsEcall = true;
+            return true;
+        }
+        if (name == "getchar") {
+            if (m_verbose)
+                std::cout << "  Replacing call getchar with RARS read_char syscall" << std::endl;
+            inst->opcode = Instruction::LI;
+            inst->operands.clear();
+            inst->addRegister(REG_A7);
+            inst->addImmediate(RARS_READ_CHAR);
+            needsEcall = true;
             return true;
         }
         if (name == "exit") {
             if (m_verbose)
-                std::cout << "  Replacing call exit with RARS exit syscall" << std::endl;
+                std::cout << "  Replacing call exit with RARS exit2 syscall" << std::endl;
             inst->opcode = Instruction::LI;
             inst->operands.clear();
             inst->addRegister(REG_A7);
-            inst->addImmediate(RARS_EXIT);
+            inst->addImmediate(RARS_EXIT2);
+            needsEcall = true;
             return true;
         }
         return false;
