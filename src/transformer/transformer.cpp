@@ -125,6 +125,44 @@ void Transformer::foldLuiAddiPairs(ast::Program* ast) {
         lui->addLabel(labelName);
 
         ast->statements.erase(ast->statements.begin() + static_cast<long>(i + 1));
+        continue;
+    }
+
+    // Fold lui+flw: lui rx,%hi(L) + flw fd,%lo(L)(rx) -> la rx,L + flw fd,0(rx)
+    for (size_t i = 0; i + 1 < ast->statements.size(); i++) {
+        auto* lui = dynamic_cast<Instruction*>(ast->statements[i].get());
+        auto* flw = dynamic_cast<Instruction*>(ast->statements[i + 1].get());
+
+        if (!lui || !flw)
+            continue;
+        if (lui->opcode != Instruction::LUI || flw->opcode != Instruction::FLW)
+            continue;
+        if (lui->operands.size() < 2 || flw->operands.size() < 3)
+            continue;
+
+        auto* luiLabel = dynamic_cast<LabelOperand*>(lui->operands[1].get());
+        auto* flwLabel = dynamic_cast<LabelOperand*>(flw->operands[1].get());
+        if (!luiLabel || !flwLabel || luiLabel->getName() != flwLabel->getName())
+            continue;
+
+        auto* luiReg = dynamic_cast<Register*>(lui->operands[0].get());
+        auto* flwBase = dynamic_cast<Register*>(flw->operands[2].get());
+        if (!luiReg || !flwBase || luiReg->getNumber() != flwBase->getNumber())
+            continue;
+
+        int baseReg = luiReg->getNumber();
+        std::string labelName = luiLabel->getName();
+
+        if (m_verbose)
+            std::cout << "  Folding lui+flw -> la x" << baseReg << ", " << labelName
+                      << " + flw with offset 0" << std::endl;
+
+        lui->opcode = Instruction::LA;
+        lui->operands.clear();
+        lui->addRegister(baseReg);
+        lui->addLabel(labelName);
+
+        flw->operands[1] = std::make_unique<Immediate>(0);
     }
 }
 
@@ -258,24 +296,37 @@ std::string Transformer::serializeNode(const ast::ASTNode* node) const {
     static const std::unordered_set<Instruction::OpCode> memOps = {
         Instruction::LW, Instruction::LB, Instruction::LBU,
         Instruction::LH, Instruction::LHU,
-        Instruction::SW, Instruction::SB, Instruction::SH
+        Instruction::SW, Instruction::SB, Instruction::SH,
+        Instruction::FLW, Instruction::FSW
     };
 
     bool isMemory = memOps.count(inst->opcode) && inst->getOperandCount() == 3;
 
     if (isMemory) {
-        auto* reg0 = dynamic_cast<const Register*>(inst->getOperand(0));
-        auto* imm = dynamic_cast<const Immediate*>(inst->getOperand(1));
-        auto* reg2 = dynamic_cast<const Register*>(inst->getOperand(2));
+        const auto* op0 = inst->getOperand(0);
+        const auto* op1 = inst->getOperand(1);
+        auto* baseReg = dynamic_cast<const Register*>(inst->getOperand(2));
 
-        ss << " x" << reg0->getNumber()
-           << ", " << imm->getValue()
-           << "(x" << reg2->getNumber() << ")";
+        ss << " ";
+        if (auto* freg = dynamic_cast<const FRegister*>(op0))
+            ss << "f" << freg->getNumber();
+        else if (auto* reg = dynamic_cast<const Register*>(op0))
+            ss << "x" << reg->getNumber();
+
+        ss << ", ";
+        if (auto* imm = dynamic_cast<const Immediate*>(op1))
+            ss << imm->getValue();
+        else if (auto* label = dynamic_cast<const LabelOperand*>(op1))
+            ss << label->getName();
+
+        ss << "(x" << baseReg->getNumber() << ")";
     } else {
         for (size_t i = 0; i < inst->getOperandCount(); i++) {
             ss << (i == 0 ? " " : ", ");
             const auto* op = inst->getOperand(i);
-            if (auto* reg = dynamic_cast<const Register*>(op))
+            if (auto* freg = dynamic_cast<const FRegister*>(op))
+                ss << "f" << freg->getNumber();
+            else if (auto* reg = dynamic_cast<const Register*>(op))
                 ss << "x" << reg->getNumber();
             else if (auto* imm = dynamic_cast<const Immediate*>(op))
                 ss << imm->getValue();

@@ -91,7 +91,7 @@ static bool crossCompile(const Options& opts, const std::string& tempAsmFile) {
     if (opts.verbose)
         std::cout << "Cross-compiling " << opts.inputFile << " to " << tempAsmFile << std::endl;
 
-    std::string cmd = opts.compiler + " -S -march=rv32im -mabi=ilp32 -O0"
+    std::string cmd = opts.compiler + " -S -march=rv32imf -mabi=ilp32f -O0"
           " -isystem " C2RARS_INCLUDE_DIR
           " -isystem " C2RARS_SOURCE_INCLUDE_DIR
           " -o " + tempAsmFile + " " + opts.inputFile;

@@ -18,9 +18,15 @@
 //   9  - sbrk               32 - sleep
 //  10  - exit               34 - print_int_hex
 //                           35 - print_int_bin
-//  (*) require FPU          36 - print_int_unsigned
+//                           36 - print_int_unsigned
 
 // ======================= Output =======================
+
+static inline void print_float(float value) {
+    register float fa0 asm("fa0") = value;
+    register int a7 asm("a7") = 2;
+    asm volatile ("ecall" : : "f"(fa0), "r"(a7));
+}
 
 static inline void print_int(int value) {
     register int a0 asm("a0") = value;
@@ -59,6 +65,13 @@ static inline void print_int_unsigned(unsigned int value) {
 }
 
 // ======================= Input ========================
+
+static inline float read_float(void) {
+    register float fa0 asm("fa0");
+    register int a7 asm("a7") = 6;
+    asm volatile ("ecall" : "=f"(fa0) : "r"(a7));
+    return fa0;
+}
 
 static inline int read_int(void) {
     register int a0 asm("a0");

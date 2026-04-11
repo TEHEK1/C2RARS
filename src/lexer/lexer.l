@@ -100,6 +100,31 @@ ALNUM       [a-zA-Z0-9_]
 "snez"          { return yy::parser::make_SNEZ(); }
 "ecall"         { return yy::parser::make_ECALL(); }
 
+"fadd.s"        { return yy::parser::make_FADD_S(); }
+"fsub.s"        { return yy::parser::make_FSUB_S(); }
+"fmul.s"        { return yy::parser::make_FMUL_S(); }
+"fdiv.s"        { return yy::parser::make_FDIV_S(); }
+"fsqrt.s"       { return yy::parser::make_FSQRT_S(); }
+"fcvt.w.s"      { return yy::parser::make_FCVT_W_S(); }
+"fcvt.s.w"      { return yy::parser::make_FCVT_S_W(); }
+"fcvt.wu.s"     { return yy::parser::make_FCVT_WU_S(); }
+"fcvt.s.wu"     { return yy::parser::make_FCVT_S_WU(); }
+"fmv.x.w"      { return yy::parser::make_FMV_X_W(); }
+"fmv.x.s"      { return yy::parser::make_FMV_X_W(); }
+"fmv.w.x"      { return yy::parser::make_FMV_W_X(); }
+"fmv.s.x"      { return yy::parser::make_FMV_W_X(); }
+"fmv.s"         { return yy::parser::make_FMV_S(); }
+"feq.s"         { return yy::parser::make_FEQ_S(); }
+"flt.s"         { return yy::parser::make_FLT_S(); }
+"fle.s"         { return yy::parser::make_FLE_S(); }
+"fgt.s"         { return yy::parser::make_FGT_S(); }
+"fge.s"         { return yy::parser::make_FGE_S(); }
+"fneg.s"        { return yy::parser::make_FNEG_S(); }
+"fabs.s"        { return yy::parser::make_FABS_S(); }
+"fclass.s"      { return yy::parser::make_FCLASS_S(); }
+"flw"           { return yy::parser::make_FLW(); }
+"fsw"           { return yy::parser::make_FSW(); }
+
 "%hi("[^)]*")"  { return yy::parser::make_IDENTIFIER(std::string(yytext + 4, yyleng - 5)); }
 "%lo("[^)]*")"  { return yy::parser::make_IDENTIFIER(std::string(yytext + 4, yyleng - 5)); }
 
@@ -136,6 +161,40 @@ ALNUM       [a-zA-Z0-9_]
 "t4"            { return yy::parser::make_REGISTER(29); }
 "t5"            { return yy::parser::make_REGISTER(30); }
 "t6"            { return yy::parser::make_REGISTER(31); }
+
+"f"[0-9]+       { return yy::parser::make_FREGISTER(atoi(yytext + 1)); }
+"ft0"           { return yy::parser::make_FREGISTER(0); }
+"ft1"           { return yy::parser::make_FREGISTER(1); }
+"ft2"           { return yy::parser::make_FREGISTER(2); }
+"ft3"           { return yy::parser::make_FREGISTER(3); }
+"ft4"           { return yy::parser::make_FREGISTER(4); }
+"ft5"           { return yy::parser::make_FREGISTER(5); }
+"ft6"           { return yy::parser::make_FREGISTER(6); }
+"ft7"           { return yy::parser::make_FREGISTER(7); }
+"fs0"           { return yy::parser::make_FREGISTER(8); }
+"fs1"           { return yy::parser::make_FREGISTER(9); }
+"fa0"           { return yy::parser::make_FREGISTER(10); }
+"fa1"           { return yy::parser::make_FREGISTER(11); }
+"fa2"           { return yy::parser::make_FREGISTER(12); }
+"fa3"           { return yy::parser::make_FREGISTER(13); }
+"fa4"           { return yy::parser::make_FREGISTER(14); }
+"fa5"           { return yy::parser::make_FREGISTER(15); }
+"fa6"           { return yy::parser::make_FREGISTER(16); }
+"fa7"           { return yy::parser::make_FREGISTER(17); }
+"fs2"           { return yy::parser::make_FREGISTER(18); }
+"fs3"           { return yy::parser::make_FREGISTER(19); }
+"fs4"           { return yy::parser::make_FREGISTER(20); }
+"fs5"           { return yy::parser::make_FREGISTER(21); }
+"fs6"           { return yy::parser::make_FREGISTER(22); }
+"fs7"           { return yy::parser::make_FREGISTER(23); }
+"fs8"           { return yy::parser::make_FREGISTER(24); }
+"fs9"           { return yy::parser::make_FREGISTER(25); }
+"fs10"          { return yy::parser::make_FREGISTER(26); }
+"fs11"          { return yy::parser::make_FREGISTER(27); }
+"ft8"           { return yy::parser::make_FREGISTER(28); }
+"ft9"           { return yy::parser::make_FREGISTER(29); }
+"ft10"          { return yy::parser::make_FREGISTER(30); }
+"ft11"          { return yy::parser::make_FREGISTER(31); }
 
 "."{LETTER}{ALNUM}*":"  {
     std::string label(yytext, yyleng - 1);

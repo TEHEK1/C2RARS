@@ -99,6 +99,29 @@ public:
     }
 };
 
+class FRegister : public Operand {
+private:
+    int number;
+
+public:
+    explicit FRegister(int num) : number(num) {}
+
+    int getNumber() const { return number; }
+
+    void print(std::ostream& os) const override {
+        if (number >= 0 && number <= 7)        os << "ft" << number;
+        else if (number >= 8 && number <= 9)   os << "fs" << (number - 8);
+        else if (number >= 10 && number <= 17) os << "fa" << (number - 10);
+        else if (number >= 18 && number <= 27) os << "fs" << (number - 16);
+        else if (number >= 28 && number <= 31) os << "ft" << (number - 20);
+        else os << "f" << number;
+    }
+
+    std::unique_ptr<Operand> clone() const override {
+        return std::make_unique<FRegister>(number);
+    }
+};
+
 class Immediate : public Operand {
 private:
     int value;
@@ -152,7 +175,14 @@ public:
         ECALL, EBREAK, FENCE,
         LI, LA, MV, CALL, RET, J, JR,
         NOP, NEG, NOT, SEQZ, SNEZ,
-        BGT, BLE, BGTU, BLEU
+        BGT, BLE, BGTU, BLEU,
+        // RV32F extension
+        FLW, FSW,
+        FADD_S, FSUB_S, FMUL_S, FDIV_S, FSQRT_S,
+        FCVT_W_S, FCVT_S_W, FCVT_WU_S, FCVT_S_WU,
+        FMV_X_W, FMV_W_X, FMV_S,
+        FEQ_S, FLT_S, FLE_S, FGT_S, FGE_S,
+        FNEG_S, FABS_S, FCLASS_S
     };
     
     OpCode opcode;
@@ -205,6 +235,10 @@ public:
     
     void addRegister(int reg) {
         operands.push_back(std::make_unique<Register>(reg));
+    }
+    
+    void addFRegister(int reg) {
+        operands.push_back(std::make_unique<FRegister>(reg));
     }
     
     void addImmediate(int imm) {
@@ -296,6 +330,28 @@ public:
             case BLE: return "ble";
             case BGTU: return "bgtu";
             case BLEU: return "bleu";
+            case FLW: return "flw";
+            case FSW: return "fsw";
+            case FADD_S: return "fadd.s";
+            case FSUB_S: return "fsub.s";
+            case FMUL_S: return "fmul.s";
+            case FDIV_S: return "fdiv.s";
+            case FSQRT_S: return "fsqrt.s";
+            case FCVT_W_S: return "fcvt.w.s";
+            case FCVT_S_W: return "fcvt.s.w";
+            case FCVT_WU_S: return "fcvt.wu.s";
+            case FCVT_S_WU: return "fcvt.s.wu";
+            case FMV_X_W: return "fmv.x.w";
+            case FMV_W_X: return "fmv.w.x";
+            case FMV_S: return "fmv.s";
+            case FEQ_S: return "feq.s";
+            case FLT_S: return "flt.s";
+            case FLE_S: return "fle.s";
+            case FGT_S: return "fgt.s";
+            case FGE_S: return "fge.s";
+            case FNEG_S: return "fneg.s";
+            case FABS_S: return "fabs.s";
+            case FCLASS_S: return "fclass.s";
             default: return "unknown";
         }
     }
