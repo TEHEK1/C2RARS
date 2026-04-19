@@ -169,6 +169,7 @@ void Transformer::foldLuiAddiPairs(ast::Program* ast) {
             case Instruction::LB:  case Instruction::LBU:
             case Instruction::SW:  case Instruction::SH:  case Instruction::SB:
             case Instruction::FLW: case Instruction::FSW:
+            case Instruction::FLD: case Instruction::FSD:
                 return true;
             default:
                 return false;
@@ -179,7 +180,7 @@ void Transformer::foldLuiAddiPairs(ast::Program* ast) {
         if (!inst || inst->operands.empty()) return false;
         switch (inst->opcode) {
             case Instruction::SW: case Instruction::SH: case Instruction::SB:
-            case Instruction::FSW:
+            case Instruction::FSW: case Instruction::FSD:
             case Instruction::BEQ: case Instruction::BNE:
             case Instruction::BLT: case Instruction::BGE:
             case Instruction::BLTU: case Instruction::BGEU:
@@ -355,7 +356,13 @@ std::string Transformer::serializeNode(const ast::ASTNode* node) const {
         ss << dir->typeToString();
         if (!dir->argument.empty())
             ss << " " << dir->argument;
-        if (dir->numericArg != 0)
+        // Data directives (.word, .byte, .half, .space) must always emit their
+        // numeric argument — including the literal 0, which is significant
+        // (e.g., the low 32 bits of a double constant like 1.0 are zero).
+        bool isDataDirective =
+            dir->type == Directive::WORD || dir->type == Directive::BYTE ||
+            dir->type == Directive::HALF || dir->type == Directive::SPACE;
+        if (isDataDirective || dir->numericArg != 0)
             ss << " " << dir->numericArg;
         return ss.str();
     }
@@ -373,7 +380,8 @@ std::string Transformer::serializeNode(const ast::ASTNode* node) const {
         Instruction::LW, Instruction::LB, Instruction::LBU,
         Instruction::LH, Instruction::LHU,
         Instruction::SW, Instruction::SB, Instruction::SH,
-        Instruction::FLW, Instruction::FSW
+        Instruction::FLW, Instruction::FSW,
+        Instruction::FLD, Instruction::FSD
     };
 
     bool isMemory = memOps.count(inst->opcode) && inst->getOperandCount() == 3;
@@ -486,14 +494,16 @@ void Transformer::reorganizeSections() {
     m_outputLines.clear();
 
     if (!dataLines.empty()) {
-        // Insert ".align 2" before each label so subsequent .word/.space/.half are
-        // word-aligned. This is required because data items can be intermixed with
-        // .string directives that produce arbitrarily-sized payloads.
+        // Insert ".align 3" (8-byte boundary) before each label so subsequent
+        // .word/.space/.half/.dword are sufficiently aligned for any access width
+        // up to 8 bytes. This is required because data items can be intermixed
+        // with .string directives that produce arbitrarily-sized payloads, and
+        // because doubles (loaded via fld) demand 8-byte alignment.
         std::vector<std::string> alignedDataLines;
         alignedDataLines.reserve(dataLines.size() * 2);
         for (const auto& line : dataLines) {
             if (!line.empty() && line.back() == ':')
-                alignedDataLines.emplace_back(".align 2");
+                alignedDataLines.emplace_back(".align 3");
             alignedDataLines.push_back(line);
         }
 

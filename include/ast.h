@@ -183,7 +183,16 @@ public:
         FCVT_W_S, FCVT_S_W, FCVT_WU_S, FCVT_S_WU,
         FMV_X_W, FMV_W_X, FMV_S,
         FEQ_S, FLT_S, FLE_S, FGT_S, FGE_S,
-        FNEG_S, FABS_S, FCLASS_S
+        FNEG_S, FABS_S, FCLASS_S,
+        // RV32D extension
+        FLD, FSD,
+        FADD_D, FSUB_D, FMUL_D, FDIV_D, FSQRT_D,
+        FCVT_W_D, FCVT_D_W, FCVT_WU_D, FCVT_D_WU,
+        FCVT_S_D, FCVT_D_S,
+        FMV_D,
+        FEQ_D, FLT_D, FLE_D, FGT_D, FGE_D,
+        FNEG_D, FABS_D, FCLASS_D,
+        FMIN_D, FMAX_D, FMIN_S, FMAX_S
     };
     
     OpCode opcode;
@@ -353,6 +362,32 @@ public:
             case FNEG_S: return "fneg.s";
             case FABS_S: return "fabs.s";
             case FCLASS_S: return "fclass.s";
+            case FLD: return "fld";
+            case FSD: return "fsd";
+            case FADD_D: return "fadd.d";
+            case FSUB_D: return "fsub.d";
+            case FMUL_D: return "fmul.d";
+            case FDIV_D: return "fdiv.d";
+            case FSQRT_D: return "fsqrt.d";
+            case FCVT_W_D: return "fcvt.w.d";
+            case FCVT_D_W: return "fcvt.d.w";
+            case FCVT_WU_D: return "fcvt.wu.d";
+            case FCVT_D_WU: return "fcvt.d.wu";
+            case FCVT_S_D: return "fcvt.s.d";
+            case FCVT_D_S: return "fcvt.d.s";
+            case FMV_D: return "fmv.d";
+            case FEQ_D: return "feq.d";
+            case FLT_D: return "flt.d";
+            case FLE_D: return "fle.d";
+            case FGT_D: return "fgt.d";
+            case FGE_D: return "fge.d";
+            case FNEG_D: return "fneg.d";
+            case FABS_D: return "fabs.d";
+            case FCLASS_D: return "fclass.d";
+            case FMIN_D: return "fmin.d";
+            case FMAX_D: return "fmax.d";
+            case FMIN_S: return "fmin.s";
+            case FMAX_S: return "fmax.s";
             default: return "unknown";
         }
     }

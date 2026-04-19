@@ -65,6 +65,15 @@ std::unique_ptr<Program> rootProgram;
 %token FMV_X_W FMV_W_X FMV_S
 %token FEQ_S FLT_S FLE_S FGT_S FGE_S
 %token FNEG_S FABS_S FCLASS_S
+%token FMIN_S FMAX_S
+%token FLD FSD
+%token FADD_D FSUB_D FMUL_D FDIV_D FSQRT_D
+%token FCVT_W_D FCVT_D_W FCVT_WU_D FCVT_D_WU
+%token FCVT_S_D FCVT_D_S
+%token FMV_D
+%token FEQ_D FLT_D FLE_D FGT_D FGE_D
+%token FNEG_D FABS_D FCLASS_D
+%token FMIN_D FMAX_D
 
 /* Operand tokens */
 %token <int> REGISTER
@@ -616,6 +625,171 @@ f_inst:
     | FCLASS_S REGISTER COMMA FREGISTER {
         auto inst = std::make_unique<Instruction>(Instruction::FCLASS_S);
         inst->addRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    /* fmin.s/fmax.s fd, fs1, fs2 */
+    | FMIN_S FREGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FMIN_S);
+        inst->addFRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FMAX_S FREGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FMAX_S);
+        inst->addFRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+
+    /* ---- RV32D extension (mirrors RV32F) ---- */
+    /* fadd.d/fsub.d/fmul.d/fdiv.d fd, fs1, fs2 */
+    | FADD_D FREGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FADD_D);
+        inst->addFRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FSUB_D FREGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FSUB_D);
+        inst->addFRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FMUL_D FREGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FMUL_D);
+        inst->addFRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FDIV_D FREGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FDIV_D);
+        inst->addFRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FSQRT_D FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FSQRT_D);
+        inst->addFRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    /* fld/fsd fd, offset(rs1)  and  fd, %lo(label)(rs1) */
+    | FLD FREGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::FLD);
+        inst->addFRegister($2); inst->addImmediate($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
+    | FLD FREGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::FLD);
+        inst->addFRegister($2); inst->addLabel($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
+    | FSD FREGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::FSD);
+        inst->addFRegister($2); inst->addImmediate($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
+    | FSD FREGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::FSD);
+        inst->addFRegister($2); inst->addLabel($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
+    /* fcvt.w.d / fcvt.wu.d / fcvt.d.w / fcvt.d.wu (with optional rounding mode) */
+    | FCVT_W_D REGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCVT_W_D);
+        inst->addRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    | FCVT_W_D REGISTER COMMA FREGISTER COMMA IDENTIFIER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCVT_W_D);
+        inst->addRegister($2); inst->addFRegister($4); inst->addLabel($6);
+        $$ = std::move(inst);
+    }
+    | FCVT_WU_D REGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCVT_WU_D);
+        inst->addRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    | FCVT_WU_D REGISTER COMMA FREGISTER COMMA IDENTIFIER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCVT_WU_D);
+        inst->addRegister($2); inst->addFRegister($4); inst->addLabel($6);
+        $$ = std::move(inst);
+    }
+    | FCVT_D_W FREGISTER COMMA REGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCVT_D_W);
+        inst->addFRegister($2); inst->addRegister($4);
+        $$ = std::move(inst);
+    }
+    | FCVT_D_WU FREGISTER COMMA REGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCVT_D_WU);
+        inst->addFRegister($2); inst->addRegister($4);
+        $$ = std::move(inst);
+    }
+    /* fcvt.s.d / fcvt.d.s — single<->double conversions */
+    | FCVT_S_D FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCVT_S_D);
+        inst->addFRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    | FCVT_S_D FREGISTER COMMA FREGISTER COMMA IDENTIFIER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCVT_S_D);
+        inst->addFRegister($2); inst->addFRegister($4); inst->addLabel($6);
+        $$ = std::move(inst);
+    }
+    | FCVT_D_S FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCVT_D_S);
+        inst->addFRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    /* fmv.d fd, fs1 */
+    | FMV_D FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FMV_D);
+        inst->addFRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    /* feq.d/flt.d/fle.d/fgt.d/fge.d rd, fs1, fs2 */
+    | FEQ_D REGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FEQ_D);
+        inst->addRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FLT_D REGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FLT_D);
+        inst->addRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FLE_D REGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FLE_D);
+        inst->addRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FGT_D REGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FGT_D);
+        inst->addRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FGE_D REGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FGE_D);
+        inst->addRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    /* fneg.d/fabs.d fd, fs1 (pseudo) */
+    | FNEG_D FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FNEG_D);
+        inst->addFRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    | FABS_D FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FABS_D);
+        inst->addFRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    | FCLASS_D REGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FCLASS_D);
+        inst->addRegister($2); inst->addFRegister($4);
+        $$ = std::move(inst);
+    }
+    | FMIN_D FREGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FMIN_D);
+        inst->addFRegister($2); inst->addFRegister($4); inst->addFRegister($6);
+        $$ = std::move(inst);
+    }
+    | FMAX_D FREGISTER COMMA FREGISTER COMMA FREGISTER {
+        auto inst = std::make_unique<Instruction>(Instruction::FMAX_D);
+        inst->addFRegister($2); inst->addFRegister($4); inst->addFRegister($6);
         $$ = std::move(inst);
     }
     ;

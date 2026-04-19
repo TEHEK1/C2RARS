@@ -6,21 +6,29 @@
 // These inline functions compile to direct ecall instructions
 // compatible with the RARS RISC-V simulator.
 //
-// Syscall table:
-//   1  - print_int          11 - print_char
-//   2  - print_float (*)    12 - read_char
-//   3  - print_double (*)   13 - open file
-//   4  - print_string       14 - read file
-//   5  - read_int           15 - write file
-//   6  - read_float (*)     16 - close file
-//   7  - read_double (*)    17 - exit2 (with code)
-//   8  - read_string        30 - time
-//   9  - sbrk               32 - sleep
-//  10  - exit               34 - print_int_hex
-//                           35 - print_int_bin
-//                           36 - print_int_unsigned
+// Full RARS syscall coverage (headless-relevant subset):
+//   1  - print_int          11 - print_char       30 - get_time
+//   2  - print_float        12 - read_char        32 - rars_sleep
+//   3  - print_double       13 - file_open        34 - print_int_hex
+//   4  - print_string       14 - file_read        35 - print_int_bin
+//   5  - read_int           15 - file_write       36 - print_int_unsigned
+//   6  - read_float         16 - file_close       40 - rng_set_seed
+//   7  - read_double        17 - rars_exit        41 - rand_int
+//   8  - read_string                              42 - rand_int_range
+//   9  - sbrk                                     43 - rand_float
+//  10  - exit                                     44 - rand_double
+//
+// Intentionally omitted:
+//   31, 33  - MIDI out (audio playback, irrelevant for headless CI)
+//   50-59   - GUI dialog boxes (Java Swing, do not work in `nc` mode)
 
 // ======================= Output =======================
+
+static inline void print_int(int value) {
+    register int a0 asm("a0") = value;
+    register int a7 asm("a7") = 1;
+    asm volatile ("ecall" : : "r"(a0), "r"(a7));
+}
 
 static inline void print_float(float value) {
     register float fa0 asm("fa0") = value;
@@ -28,10 +36,10 @@ static inline void print_float(float value) {
     asm volatile ("ecall" : : "f"(fa0), "r"(a7));
 }
 
-static inline void print_int(int value) {
-    register int a0 asm("a0") = value;
-    register int a7 asm("a7") = 1;
-    asm volatile ("ecall" : : "r"(a0), "r"(a7));
+static inline void print_double(double value) {
+    register double fa0 asm("fa0") = value;
+    register int a7 asm("a7") = 3;
+    asm volatile ("ecall" : : "f"(fa0), "r"(a7));
 }
 
 static inline void print_string(const char* str) {
@@ -66,6 +74,13 @@ static inline void print_int_unsigned(unsigned int value) {
 
 // ======================= Input ========================
 
+static inline int read_int(void) {
+    register int a0 asm("a0");
+    register int a7 asm("a7") = 5;
+    asm volatile ("ecall" : "=r"(a0) : "r"(a7));
+    return a0;
+}
+
 static inline float read_float(void) {
     register float fa0 asm("fa0");
     register int a7 asm("a7") = 6;
@@ -73,11 +88,11 @@ static inline float read_float(void) {
     return fa0;
 }
 
-static inline int read_int(void) {
-    register int a0 asm("a0");
-    register int a7 asm("a7") = 5;
-    asm volatile ("ecall" : "=r"(a0) : "r"(a7));
-    return a0;
+static inline double read_double(void) {
+    register double fa0 asm("fa0");
+    register int a7 asm("a7") = 7;
+    asm volatile ("ecall" : "=f"(fa0) : "r"(a7));
+    return fa0;
 }
 
 static inline char read_char(void) {
@@ -145,7 +160,21 @@ static inline void rars_exit(int code) {
     asm volatile ("ecall" : : "r"(a0), "r"(a7));
 }
 
-static inline unsigned int get_time(void) {
+// Returns the low 32 bits of system time in milliseconds since the epoch.
+// The high 32 bits are stored in *high (or ignored if NULL is not supported
+// here — pass a stack variable).
+static inline unsigned int get_time(unsigned int* high) {
+    register unsigned int a0 asm("a0");
+    register unsigned int a1 asm("a1");
+    register int a7 asm("a7") = 30;
+    asm volatile ("ecall" : "=r"(a0), "=r"(a1) : "r"(a7));
+    if (high) *high = a1;
+    return a0;
+}
+
+// Convenience wrapper that returns only the low 32 bits — sufficient for
+// most "elapsed milliseconds" use cases since wraparound is ~49 days.
+static inline unsigned int get_time_lo(void) {
     register unsigned int a0 asm("a0");
     register int a7 asm("a7") = 30;
     asm volatile ("ecall" : "=r"(a0) : "r"(a7));
@@ -156,6 +185,51 @@ static inline void rars_sleep(int milliseconds) {
     register int a0 asm("a0") = milliseconds;
     register int a7 asm("a7") = 32;
     asm volatile ("ecall" : : "r"(a0), "r"(a7));
+}
+
+// =================== Random ====================
+// `stream` selects which independent RNG sequence to use (0..N).
+// Each stream maintains its own seed/state inside RARS.
+
+static inline void rng_set_seed(int stream, int seed) {
+    register int a0 asm("a0") = stream;
+    register int a1 asm("a1") = seed;
+    register int a7 asm("a7") = 40;
+    asm volatile ("ecall" : : "r"(a0), "r"(a1), "r"(a7));
+}
+
+static inline int rand_int(int stream) {
+    register int a0 asm("a0") = stream;
+    register int a7 asm("a7") = 41;
+    asm volatile ("ecall" : "+r"(a0) : "r"(a7));
+    return a0;
+}
+
+// Returns a random int in [0, upper_bound).
+static inline int rand_int_range(int stream, int upper_bound) {
+    register int a0 asm("a0") = stream;
+    register int a1 asm("a1") = upper_bound;
+    register int a7 asm("a7") = 42;
+    asm volatile ("ecall" : "+r"(a0) : "r"(a1), "r"(a7));
+    return a0;
+}
+
+// Returns a random float in [0.0, 1.0).
+static inline float rand_float(int stream) {
+    register int a0 asm("a0") = stream;
+    register float fa0 asm("fa0");
+    register int a7 asm("a7") = 43;
+    asm volatile ("ecall" : "=f"(fa0) : "r"(a0), "r"(a7));
+    return fa0;
+}
+
+// Returns a random double in [0.0, 1.0).
+static inline double rand_double(int stream) {
+    register int a0 asm("a0") = stream;
+    register double fa0 asm("fa0");
+    register int a7 asm("a7") = 44;
+    asm volatile ("ecall" : "=f"(fa0) : "r"(a0), "r"(a7));
+    return fa0;
 }
 
 #endif // C2RARS_RARS_IO_H
