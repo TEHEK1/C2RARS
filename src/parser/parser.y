@@ -44,6 +44,7 @@ std::unique_ptr<Program> rootProgram;
 %token GLOBL_DIRECTIVE ALIGN_DIRECTIVE SECTION_DIRECTIVE
 %token STRING_DIRECTIVE ASCIZ_DIRECTIVE
 %token WORD_DIRECTIVE BYTE_DIRECTIVE HALF_DIRECTIVE SPACE_DIRECTIVE
+%token COMM_DIRECTIVE
 
 /* Instruction tokens */
 %token ADD ADDI SUB MUL MULH DIV REM
@@ -136,6 +137,12 @@ directive:
     | SPACE_DIRECTIVE NUMBER { 
         $$ = std::make_unique<Directive>(Directive::SPACE, "", $2);
     }
+    | COMM_DIRECTIVE IDENTIFIER COMMA NUMBER COMMA NUMBER {
+        $$ = std::make_unique<Directive>(Directive::COMM, $2, $4);
+    }
+    | COMM_DIRECTIVE IDENTIFIER COMMA NUMBER {
+        $$ = std::make_unique<Directive>(Directive::COMM, $2, $4);
+    }
     ;
 
 label:
@@ -225,11 +232,21 @@ i_type_inst:
         inst->addRegister($6);      // base
         $$ = std::move(inst);
     }
+    | LW REGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::LW);
+        inst->addRegister($2); inst->addLabel($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
     | LB REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
         auto inst = std::make_unique<Instruction>(Instruction::LB);
         inst->addRegister($2);      // rd
         inst->addImmediate($4);     // offset
         inst->addRegister($6);      // base
+        $$ = std::move(inst);
+    }
+    | LB REGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::LB);
+        inst->addRegister($2); inst->addLabel($4); inst->addRegister($6);
         $$ = std::move(inst);
     }
     | LBU REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
@@ -239,6 +256,11 @@ i_type_inst:
         inst->addRegister($6);
         $$ = std::move(inst);
     }
+    | LBU REGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::LBU);
+        inst->addRegister($2); inst->addLabel($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
     | LH REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
         auto inst = std::make_unique<Instruction>(Instruction::LH);
         inst->addRegister($2);
@@ -246,11 +268,21 @@ i_type_inst:
         inst->addRegister($6);
         $$ = std::move(inst);
     }
+    | LH REGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::LH);
+        inst->addRegister($2); inst->addLabel($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
     | LHU REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
         auto inst = std::make_unique<Instruction>(Instruction::LHU);
         inst->addRegister($2);
         inst->addImmediate($4);
         inst->addRegister($6);
+        $$ = std::move(inst);
+    }
+    | LHU REGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::LHU);
+        inst->addRegister($2); inst->addLabel($4); inst->addRegister($6);
         $$ = std::move(inst);
     }
     | JALR REGISTER COMMA REGISTER COMMA NUMBER { 
@@ -284,11 +316,26 @@ s_type_inst:
     SW REGISTER COMMA NUMBER LPAREN REGISTER RPAREN { 
         $$ = Instruction::CreateSType(Instruction::SW, $2, $6, $4);
     }
+    | SW REGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::SW);
+        inst->addRegister($2); inst->addLabel($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
     | SB REGISTER COMMA NUMBER LPAREN REGISTER RPAREN { 
         $$ = Instruction::CreateSType(Instruction::SB, $2, $6, $4);
     }
+    | SB REGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::SB);
+        inst->addRegister($2); inst->addLabel($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
     | SH REGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
         $$ = Instruction::CreateSType(Instruction::SH, $2, $6, $4);
+    }
+    | SH REGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::SH);
+        inst->addRegister($2); inst->addLabel($4); inst->addRegister($6);
+        $$ = std::move(inst);
     }
     ;
 
@@ -470,6 +517,11 @@ f_inst:
     | FSW FREGISTER COMMA NUMBER LPAREN REGISTER RPAREN {
         auto inst = std::make_unique<Instruction>(Instruction::FSW);
         inst->addFRegister($2); inst->addImmediate($4); inst->addRegister($6);
+        $$ = std::move(inst);
+    }
+    | FSW FREGISTER COMMA IDENTIFIER LPAREN REGISTER RPAREN {
+        auto inst = std::make_unique<Instruction>(Instruction::FSW);
+        inst->addFRegister($2); inst->addLabel($4); inst->addRegister($6);
         $$ = std::move(inst);
     }
     /* fcvt.w.s rd, fs1 (with optional rounding mode) */

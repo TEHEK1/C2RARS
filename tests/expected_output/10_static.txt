@@ -1,0 +1,17 @@
+Globals before:
+1
+0
+Globals after:
+1
+42
+First 10 Fibonacci numbers:
+1
+2
+3
+5
+8
+13
+21
+34
+55
+89

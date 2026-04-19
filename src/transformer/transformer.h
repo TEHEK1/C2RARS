@@ -34,6 +34,7 @@ private:
     static constexpr int LINUX_EXIT_GROUP     = 94;
 
     void removeUnsupportedDirectives(ast::Program* ast);
+    void expandCommDirectives(ast::Program* ast);
     void foldLuiAddiPairs(ast::Program* ast);
     void replaceMainReturn(ast::Program* ast);
     bool processInstruction(ast::Instruction* inst, bool& needsEcall);

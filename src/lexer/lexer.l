@@ -28,7 +28,8 @@ ALNUM       [a-zA-Z0-9_]
 ".type".*                           { /* skip GCC .type directive */ }
 ".size".*                           { /* skip GCC .size directive */ }
 ".ident".*                          { /* skip GCC .ident directive */ }
-".section"[ \t]+"."[^\n]*          { /* skip .section with dot-prefixed names (.rodata, .note, etc.) */ }
+".local".*                          { /* skip .local linkage directive */ }
+".section"[ \t]+"."[^\n]*          { /* skip .section with dot-prefixed names (.rodata, .sdata, .note, etc.) */ }
 
 ".text"         { return yy::parser::make_TEXT_DIRECTIVE(); }
 ".data"         { return yy::parser::make_DATA_DIRECTIVE(); }
@@ -42,6 +43,8 @@ ALNUM       [a-zA-Z0-9_]
 ".byte"         { return yy::parser::make_BYTE_DIRECTIVE(); }
 ".half"         { return yy::parser::make_HALF_DIRECTIVE(); }
 ".space"        { return yy::parser::make_SPACE_DIRECTIVE(); }
+".zero"         { return yy::parser::make_SPACE_DIRECTIVE(); }
+".comm"         { return yy::parser::make_COMM_DIRECTIVE(); }
 
 "add"           { return yy::parser::make_ADD(); }
 "addi"          { return yy::parser::make_ADDI(); }
@@ -196,19 +199,19 @@ ALNUM       [a-zA-Z0-9_]
 "ft10"          { return yy::parser::make_FREGISTER(30); }
 "ft11"          { return yy::parser::make_FREGISTER(31); }
 
-"."{LETTER}{ALNUM}*":"  {
+"."{LETTER}{ALNUM}*("."{ALNUM}+)*":"  {
     std::string label(yytext, yyleng - 1);
     return yy::parser::make_LABEL_DEF(label);
 }
 
-{LETTER}{ALNUM}*":"     { 
+{LETTER}{ALNUM}*("."{ALNUM}+)*":"     {
     std::string label(yytext, yyleng - 1);
     return yy::parser::make_LABEL_DEF(label);
 }
 
-"."{LETTER}{ALNUM}*     { return yy::parser::make_IDENTIFIER(std::string(yytext)); }
+"."{LETTER}{ALNUM}*("."{ALNUM}+)*     { return yy::parser::make_IDENTIFIER(std::string(yytext)); }
 
-{LETTER}{ALNUM}*        { 
+{LETTER}{ALNUM}*("."{ALNUM}+)*        {
     return yy::parser::make_IDENTIFIER(std::string(yytext));
 }
 

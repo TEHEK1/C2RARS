@@ -20,6 +20,7 @@ bool Transformer::transformAST(ast::Program* ast) {
         std::cout << "Transforming AST..." << std::endl;
 
     removeUnsupportedDirectives(ast);
+    expandCommDirectives(ast);
     foldLuiAddiPairs(ast);
 
     for (size_t i = 0; i < ast->statements.size(); i++) {
@@ -90,6 +91,32 @@ void Transformer::removeUnsupportedDirectives(ast::Program* ast) {
         std::cout << "  Removed " << (before - ast->statements.size()) << " directives" << std::endl;
 }
 
+void Transformer::expandCommDirectives(ast::Program* ast) {
+    if (!ast) return;
+
+    for (size_t i = 0; i < ast->statements.size(); i++) {
+        auto* dir = dynamic_cast<Directive*>(ast->statements[i].get());
+        if (!dir || dir->type != Directive::COMM)
+            continue;
+
+        std::string name = dir->argument;
+        int size = dir->numericArg;
+        if (size <= 0) size = 4;
+
+        if (m_verbose)
+            std::cout << "  Expanding .comm " << name << "," << size
+                      << " -> " << name << ": .space " << size << std::endl;
+
+        auto label = std::make_unique<Label>(name);
+        auto space = std::make_unique<Directive>(Directive::SPACE, "", size);
+
+        ast->statements[i] = std::move(label);
+        ast->statements.insert(ast->statements.begin() + static_cast<long>(i + 1),
+                               std::move(space));
+        i++;
+    }
+}
+
 void Transformer::foldLuiAddiPairs(ast::Program* ast) {
     for (size_t i = 0; i + 1 < ast->statements.size(); i++) {
         auto* lui = dynamic_cast<Instruction*>(ast->statements[i].get());
@@ -128,41 +155,90 @@ void Transformer::foldLuiAddiPairs(ast::Program* ast) {
         continue;
     }
 
-    // Fold lui+flw: lui rx,%hi(L) + flw fd,%lo(L)(rx) -> la rx,L + flw fd,0(rx)
+    // Fold lui+(load/store): lui rx,%hi(L) + memop rd,%lo(L)(rx) -> la rx,L + memop rd,0(rx)
+    // Operand layout for both loads and stores in this AST:
+    //   operands[0] = data register (rd or rs2)
+    //   operands[1] = offset (immediate or label)
+    //   operands[2] = base register (rs1 / rx)
+    // The matching memop may not be the immediately next instruction (GCC sometimes
+    // schedules an unrelated instruction between them), so we look ahead a few
+    // instructions, ensuring rx is not clobbered in between.
+    auto isFoldableMemOp = [](Instruction::OpCode op) {
+        switch (op) {
+            case Instruction::LW:  case Instruction::LH:  case Instruction::LHU:
+            case Instruction::LB:  case Instruction::LBU:
+            case Instruction::SW:  case Instruction::SH:  case Instruction::SB:
+            case Instruction::FLW: case Instruction::FSW:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    auto writesRegister = [](const Instruction* inst, int regNum) {
+        if (!inst || inst->operands.empty()) return false;
+        switch (inst->opcode) {
+            case Instruction::SW: case Instruction::SH: case Instruction::SB:
+            case Instruction::FSW:
+            case Instruction::BEQ: case Instruction::BNE:
+            case Instruction::BLT: case Instruction::BGE:
+            case Instruction::BLTU: case Instruction::BGEU:
+            case Instruction::J: case Instruction::JR: case Instruction::JAL:
+            case Instruction::JALR: case Instruction::CALL: case Instruction::ECALL:
+            case Instruction::NOP: case Instruction::RET:
+                return false;
+            default:
+                break;
+        }
+        if (auto* reg = dynamic_cast<const Register*>(inst->operands[0].get()))
+            return reg->getNumber() == regNum;
+        return false;
+    };
+
+    constexpr size_t kFoldLookahead = 4;
     for (size_t i = 0; i + 1 < ast->statements.size(); i++) {
         auto* lui = dynamic_cast<Instruction*>(ast->statements[i].get());
-        auto* flw = dynamic_cast<Instruction*>(ast->statements[i + 1].get());
-
-        if (!lui || !flw)
-            continue;
-        if (lui->opcode != Instruction::LUI || flw->opcode != Instruction::FLW)
-            continue;
-        if (lui->operands.size() < 2 || flw->operands.size() < 3)
+        if (!lui || lui->opcode != Instruction::LUI || lui->operands.size() < 2)
             continue;
 
         auto* luiLabel = dynamic_cast<LabelOperand*>(lui->operands[1].get());
-        auto* flwLabel = dynamic_cast<LabelOperand*>(flw->operands[1].get());
-        if (!luiLabel || !flwLabel || luiLabel->getName() != flwLabel->getName())
-            continue;
-
         auto* luiReg = dynamic_cast<Register*>(lui->operands[0].get());
-        auto* flwBase = dynamic_cast<Register*>(flw->operands[2].get());
-        if (!luiReg || !flwBase || luiReg->getNumber() != flwBase->getNumber())
+        if (!luiLabel || !luiReg)
             continue;
 
         int baseReg = luiReg->getNumber();
         std::string labelName = luiLabel->getName();
 
-        if (m_verbose)
-            std::cout << "  Folding lui+flw -> la x" << baseReg << ", " << labelName
-                      << " + flw with offset 0" << std::endl;
+        size_t maxJ = std::min(ast->statements.size(), i + 1 + kFoldLookahead);
+        for (size_t j = i + 1; j < maxJ; j++) {
+            auto* mem = dynamic_cast<Instruction*>(ast->statements[j].get());
+            if (!mem) break;
 
-        lui->opcode = Instruction::LA;
-        lui->operands.clear();
-        lui->addRegister(baseReg);
-        lui->addLabel(labelName);
+            if (isFoldableMemOp(mem->opcode) && mem->operands.size() >= 3) {
+                auto* memLabel = dynamic_cast<LabelOperand*>(mem->operands[1].get());
+                auto* memBase = dynamic_cast<Register*>(mem->operands[2].get());
+                if (memLabel && memBase &&
+                    memLabel->getName() == labelName &&
+                    memBase->getNumber() == baseReg) {
 
-        flw->operands[1] = std::make_unique<Immediate>(0);
+                    if (m_verbose)
+                        std::cout << "  Folding lui+" << mem->opcodeToString()
+                                  << " -> la x" << baseReg << ", " << labelName
+                                  << " + offset 0" << std::endl;
+
+                    lui->opcode = Instruction::LA;
+                    lui->operands.clear();
+                    lui->addRegister(baseReg);
+                    lui->addLabel(labelName);
+
+                    mem->operands[1] = std::make_unique<Immediate>(0);
+                    break;
+                }
+            }
+
+            if (writesRegister(mem, baseReg))
+                break;
+        }
     }
 }
 
@@ -410,8 +486,19 @@ void Transformer::reorganizeSections() {
     m_outputLines.clear();
 
     if (!dataLines.empty()) {
+        // Insert ".align 2" before each label so subsequent .word/.space/.half are
+        // word-aligned. This is required because data items can be intermixed with
+        // .string directives that produce arbitrarily-sized payloads.
+        std::vector<std::string> alignedDataLines;
+        alignedDataLines.reserve(dataLines.size() * 2);
+        for (const auto& line : dataLines) {
+            if (!line.empty() && line.back() == ':')
+                alignedDataLines.emplace_back(".align 2");
+            alignedDataLines.push_back(line);
+        }
+
         m_outputLines.push_back(".data");
-        m_outputLines.insert(m_outputLines.end(), dataLines.begin(), dataLines.end());
+        m_outputLines.insert(m_outputLines.end(), alignedDataLines.begin(), alignedDataLines.end());
         m_outputLines.emplace_back();
     }
 

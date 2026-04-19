@@ -19,7 +19,7 @@ class Directive : public ASTNode {
 public:
     enum Type {
         TEXT, DATA, BSS, GLOBL, ALIGN, 
-        SECTION, STRING, ASCIZ, WORD, BYTE, HALF, SPACE
+        SECTION, STRING, ASCIZ, WORD, BYTE, HALF, SPACE, COMM
     };
     
     Type type;
@@ -50,6 +50,7 @@ public:
             case BYTE: return ".byte";
             case HALF: return ".half";
             case SPACE: return ".space";
+            case COMM: return ".comm";
             default: return "unknown";
         }
     }
