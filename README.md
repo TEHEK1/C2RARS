@@ -199,43 +199,27 @@ c2rars -i prog.c -DDEBUG=1 -DBUFSZ=128
 
 ## Тестирование
 
-Интеграционные тесты прогоняют каждый пример через **оба** бэкенда и
-сравнивают вывод с одним и тем же эталоном в `tests/expected_output/`:
+Каждый пример прогоняется двумя путями, и оба вывода сравниваются с одним
+и тем же эталоном в `tests/expected_output/`:
 
-1. **RARS-путь:** `C → GCC (riscv32imfd) → c2rars → java -jar rars.jar nc`
-2. **Host-путь:** `C → cc (нативный) → ./prog`
+- **RARS:** `c2rars` транслирует `.c` в `.asm`, который запускается через
+  `java -jar rars.jar nc`.
+- **Host:** тот же `.c` собирается нативным компилятором и просто запускается.
 
-Если хоть один из бэкендов даёт расхождение — тест падает. Это гарантирует,
-что `rars_io.h` остаётся честной двухплатформенной абстракцией: любой
-коммит, ломающий обратную совместимость на одной из сторон, ловится сразу.
+Если расходится хотя бы один путь — тест падает.
+
+Запуск:
 
 ```bash
-./scripts/test.sh                     # базовый прогон (RARS + host)
+./scripts/test.sh                     # все примеры, оба пути
 ./scripts/test.sh -v                  # подробный вывод
-./scripts/test.sh --build             # пересобрать перед тестированием
-./scripts/test.sh --no-rars           # только трансформация и host
-./scripts/test.sh --no-host           # только трансформация и RARS
-./scripts/test.sh --example 03_loop   # один конкретный пример
+./scripts/test.sh --build             # пересобрать c2rars перед запуском
+./scripts/test.sh --no-rars           # пропустить RARS
+./scripts/test.sh --no-host           # пропустить host
+./scripts/test.sh --example 03_loop   # один пример
 HOST_CC=clang ./scripts/test.sh       # выбрать хост-компилятор
 ```
 
-Пример успешного прогона:
-
-```
-01_hello             PASS (RARS + host)
-09_float             PASS (RARS + host)
-11_double            PASS (RARS + host)
-12_random            PASS (RARS + host)
-```
-
-## CI
-
-GitHub Actions запускается при пуше в `main` и на pull request'ах. Пайплайн:
-
-1. Установка зависимостей (cmake, flex, bison, riscv64 gcc, Java 17)
-2. Сборка c2rars
-3. Запуск `scripts/test.sh -v` — каждый пример валидируется
-   на обоих бэкендах (RARS и host) против общего эталона
 
 ## Структура проекта
 
