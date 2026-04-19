@@ -9,6 +9,8 @@ RARS_JAR="${PROJECT_ROOT}/rars.jar"
 EXAMPLES_DIR="${PROJECT_ROOT}/examples"
 EXPECTED_DIR="${PROJECT_ROOT}/tests/expected_output"
 OUTPUT_DIR="${BUILD_DIR}/test_output"
+INCLUDE_DIR="${PROJECT_ROOT}/include"
+HOST_CC="${HOST_CC:-cc}"
 
 PASS=0
 FAIL=0
@@ -25,13 +27,18 @@ usage() {
     echo "Options:"
     echo "  --build         Build c2rars before testing (default: off)"
     echo "  --no-rars       Skip RARS simulation (only test c2rars transformation)"
+    echo "  --no-host       Skip native host build/run (only test RARS path)"
     echo "  --example NAME  Run only the specified example (e.g. 01_hello)"
     echo "  -v, --verbose   Verbose output"
     echo "  -h, --help      Show this help"
+    echo ""
+    echo "Environment:"
+    echo "  HOST_CC         Native compiler for host build (default: cc)"
 }
 
 DO_BUILD=false
 NO_RARS=false
+NO_HOST=false
 SINGLE=""
 VERBOSE=false
 
@@ -39,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --build)     DO_BUILD=true; shift ;;
         --no-rars)   NO_RARS=true; shift ;;
+        --no-host)   NO_HOST=true; shift ;;
         --example)   SINGLE="$2"; shift 2 ;;
         -v|--verbose) VERBOSE=true; shift ;;
         -h|--help)   usage; exit 0 ;;
@@ -70,9 +78,13 @@ if ! $NO_RARS && ! command -v java &>/dev/null; then
     NO_RARS=true
 fi
 
+if ! $NO_HOST && ! command -v "$HOST_CC" &>/dev/null; then
+    echo -e "${YELLOW}Warning: $HOST_CC not found — skipping native host build${NC}"
+    NO_HOST=true
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
-# Run a single-file test (one .c file -> one .asm)
 run_single_test() {
     local cfile="$1"
     local name="$2"
@@ -86,17 +98,10 @@ run_single_test() {
     fi
 
     if ! "$C2RARS" "${c2rars_args[@]}" >"${test_output_dir}/${name}.c2rars.log" 2>&1; then
-        echo -e "${RED}FAIL${NC} (c2rars transformation failed)"
-        if $VERBOSE; then
-            cat "${test_output_dir}/${name}.c2rars.log"
-        fi
-        FAIL=$((FAIL + 1))
         return 1
     fi
 
     if [[ ! -f "$asm_file" ]]; then
-        echo -e "${RED}FAIL${NC} (no .asm output produced)"
-        FAIL=$((FAIL + 1))
         return 1
     fi
 
@@ -104,7 +109,158 @@ run_single_test() {
     return 0
 }
 
-# Run test for an example directory
+# Run RARS path. Sets globals: RARS_STATUS (pass|fail|skip), RARS_DETAIL (msg).
+run_rars_path() {
+    local example_dir="$1"
+    local name="$2"
+    local test_output_dir="$3"
+    local expected_file="$4"
+    shift 4
+    local c_files=("$@")
+
+    local asm_files=()
+
+    if [[ ${#c_files[@]} -eq 1 ]]; then
+        local result
+        if ! result=$(run_single_test "${c_files[0]}" "$name" "$test_output_dir"); then
+            RARS_STATUS=fail
+            RARS_DETAIL="c2rars transformation failed"
+            return
+        fi
+        asm_files+=("$result")
+    else
+        for cfile in "${c_files[@]}"; do
+            local basename_c
+            basename_c="$(basename "$cfile" .c)"
+            local result
+            if ! result=$(run_single_test "$cfile" "$basename_c" "$test_output_dir"); then
+                RARS_STATUS=fail
+                RARS_DETAIL="c2rars transformation failed for $basename_c"
+                return
+            fi
+            asm_files+=("$result")
+        done
+
+        # Verify: non-main .asm files must NOT contain .globl main; reorder so
+        # the file with main: is first (RARS requirement).
+        local main_asm=""
+        local other_asms=()
+        for asm_file in "${asm_files[@]}"; do
+            local basename_asm
+            basename_asm="$(basename "$asm_file" .asm)"
+            if grep -q '^main:' "$asm_file" 2>/dev/null; then
+                main_asm="$asm_file"
+            else
+                other_asms+=("$asm_file")
+                if grep -q '\.globl main' "$asm_file" 2>/dev/null; then
+                    RARS_STATUS=fail
+                    RARS_DETAIL="${basename_asm}.asm has .globl main but no main function"
+                    return
+                fi
+            fi
+        done
+        asm_files=()
+        if [[ -n "$main_asm" ]]; then
+            asm_files+=("$main_asm")
+        fi
+        asm_files+=("${other_asms[@]}")
+    fi
+
+    if [[ ! -f "$expected_file" ]]; then
+        RARS_STATUS=skip
+        RARS_DETAIL="no expected output (interactive)"
+        return
+    fi
+
+    if $NO_RARS; then
+        RARS_STATUS=skip
+        RARS_DETAIL="--no-rars"
+        return
+    fi
+
+    local actual_file="${test_output_dir}/${name}.rars.actual.txt"
+    if ! java -jar "$RARS_JAR" nc "${asm_files[@]}" > "$actual_file" 2>"${test_output_dir}/${name}.rars.log"; then
+        RARS_STATUS=fail
+        RARS_DETAIL="RARS simulation error"
+        return
+    fi
+
+    if diff -q "$expected_file" "$actual_file" &>/dev/null; then
+        RARS_STATUS=pass
+        RARS_DETAIL=""
+    else
+        RARS_STATUS=fail
+        RARS_DETAIL="output mismatch"
+        if $VERBOSE; then
+            echo
+            echo "    --- RARS expected ---"
+            cat "$expected_file"
+            echo "    --- RARS actual ---"
+            cat "$actual_file"
+            echo "    --- diff ---"
+            diff "$expected_file" "$actual_file" || true
+        fi
+    fi
+}
+
+run_host_path() {
+    local name="$1"
+    local test_output_dir="$2"
+    local expected_file="$3"
+    shift 3
+    local c_files=("$@")
+
+    if $NO_HOST; then
+        HOST_STATUS=skip
+        HOST_DETAIL="--no-host"
+        return
+    fi
+
+    if [[ ! -f "$expected_file" ]]; then
+        HOST_STATUS=skip
+        HOST_DETAIL="no expected output (interactive)"
+        return
+    fi
+
+    local bin="${test_output_dir}/${name}.host"
+    local cc_log="${test_output_dir}/${name}.host.cc.log"
+
+    if ! "$HOST_CC" -I "$INCLUDE_DIR" -O0 -Wno-implicit-function-declaration \
+        "${c_files[@]}" -o "$bin" >"$cc_log" 2>&1; then
+        HOST_STATUS=fail
+        HOST_DETAIL="$HOST_CC compile failed"
+        if $VERBOSE; then
+            echo
+            cat "$cc_log"
+        fi
+        return
+    fi
+
+    local actual_file="${test_output_dir}/${name}.host.actual.txt"
+    if ! "$bin" > "$actual_file" 2>"${test_output_dir}/${name}.host.run.log"; then
+        HOST_STATUS=fail
+        HOST_DETAIL="host binary crashed"
+        return
+    fi
+
+    if diff -q "$expected_file" "$actual_file" &>/dev/null; then
+        HOST_STATUS=pass
+        HOST_DETAIL=""
+    else
+        HOST_STATUS=fail
+        HOST_DETAIL="output mismatch"
+        if $VERBOSE; then
+            echo
+            echo "    --- host expected ---"
+            cat "$expected_file"
+            echo "    --- host actual ---"
+            cat "$actual_file"
+            echo "    --- diff ---"
+            diff "$expected_file" "$actual_file" || true
+        fi
+    fi
+}
+
 run_test() {
     local example_dir="$1"
     local name
@@ -117,7 +273,6 @@ run_test() {
 
     printf "  %-20s " "$name"
 
-    # Count .c files
     local c_files=()
     while IFS= read -r -d '' f; do
         c_files+=("$f")
@@ -129,92 +284,45 @@ run_test() {
         return
     fi
 
-    local asm_files=()
-    local transform_failed=false
+    RARS_STATUS=pass; RARS_DETAIL=""
+    HOST_STATUS=pass; HOST_DETAIL=""
 
-    if [[ ${#c_files[@]} -eq 1 ]]; then
-        # Single-file mode
-        local result
-        result=$(run_single_test "${c_files[0]}" "$name" "$test_output_dir") || { transform_failed=true; return; }
-        asm_files+=("$result")
+    run_rars_path "$example_dir" "$name" "$test_output_dir" "$expected_file" "${c_files[@]}"
+    run_host_path "$name" "$test_output_dir" "$expected_file" "${c_files[@]}"
+
+    local backends=()
+    [[ "$RARS_STATUS" == pass ]] && backends+=("RARS")
+    [[ "$HOST_STATUS" == pass ]] && backends+=("host")
+    local backends_str
+    if [[ ${#backends[@]} -eq 0 ]]; then
+        backends_str="none"
     else
-        # Multi-file mode: compile each .c file separately
-        for cfile in "${c_files[@]}"; do
-            local basename_c
-            basename_c="$(basename "$cfile" .c)"
-            local result
-            result=$(run_single_test "$cfile" "$basename_c" "$test_output_dir") || { transform_failed=true; return; }
-            asm_files+=("$result")
-        done
+        backends_str=$(printf "%s" "${backends[@]/%/ + }")
+        backends_str=${backends_str% + }
+    fi
 
-        # Verify: non-main .asm files must NOT contain .globl main
-        # Also reorder: file with main: goes first (RARS requirement)
-        local main_asm=""
-        local other_asms=()
-        for asm_file in "${asm_files[@]}"; do
-            local basename_asm
-            basename_asm="$(basename "$asm_file" .asm)"
-            if grep -q '^main:' "$asm_file" 2>/dev/null; then
-                main_asm="$asm_file"
-            else
-                other_asms+=("$asm_file")
-                # This file has no main — it must not have .globl main
-                if grep -q '\.globl main' "$asm_file" 2>/dev/null; then
-                    echo -e "${RED}FAIL${NC} (${basename_asm}.asm has .globl main but no main function)"
-                    FAIL=$((FAIL + 1))
-                    return
-                fi
-            fi
-        done
-        # Rebuild asm_files with main first
-        asm_files=()
-        if [[ -n "$main_asm" ]]; then
-            asm_files+=("$main_asm")
+    if [[ "$RARS_STATUS" == fail || "$HOST_STATUS" == fail ]]; then
+        local msg=""
+        [[ "$RARS_STATUS" == fail ]] && msg="RARS: $RARS_DETAIL"
+        if [[ "$HOST_STATUS" == fail ]]; then
+            [[ -n "$msg" ]] && msg+="; "
+            msg+="host: $HOST_DETAIL"
         fi
-        asm_files+=("${other_asms[@]}")
-    fi
-
-    # Check for expected output before running RARS (interactive examples
-    # would hang waiting for stdin if we tried to simulate them)
-    if [[ ! -f "$expected_file" ]]; then
-        echo -e "${GREEN}PASS${NC} (transform only, no expected output)"
-        PASS=$((PASS + 1))
-        return
-    fi
-
-    # Run in RARS simulator
-    if $NO_RARS; then
-        echo -e "${GREEN}PASS${NC} (transform only)"
-        PASS=$((PASS + 1))
-        return
-    fi
-
-    local actual_file="${test_output_dir}/${name}.actual.txt"
-
-    if ! java -jar "$RARS_JAR" nc "${asm_files[@]}" > "$actual_file" 2>"${test_output_dir}/${name}.rars.log"; then
-        echo -e "${RED}FAIL${NC} (RARS simulation error)"
-        if $VERBOSE; then
-            cat "${test_output_dir}/${name}.rars.log"
-        fi
+        echo -e "${RED}FAIL${NC} ($msg)"
         FAIL=$((FAIL + 1))
         return
     fi
 
-    if diff -q "$expected_file" "$actual_file" &>/dev/null; then
-        echo -e "${GREEN}PASS${NC}"
+    if [[ "$RARS_STATUS" == skip && "$HOST_STATUS" == skip ]]; then
+        local msg=""
+        [[ -n "$RARS_DETAIL" ]] && msg="$RARS_DETAIL"
+        echo -e "${GREEN}PASS${NC} (transform only${msg:+: $msg})"
         PASS=$((PASS + 1))
-    else
-        echo -e "${RED}FAIL${NC} (output mismatch)"
-        if $VERBOSE; then
-            echo "    --- Expected ---"
-            cat "$expected_file"
-            echo "    --- Actual ---"
-            cat "$actual_file"
-            echo "    --- Diff ---"
-            diff "$expected_file" "$actual_file" || true
-        fi
-        FAIL=$((FAIL + 1))
+        return
     fi
+
+    echo -e "${GREEN}PASS${NC} ($backends_str)"
+    PASS=$((PASS + 1))
 }
 
 echo "========================================"

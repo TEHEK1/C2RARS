@@ -146,11 +146,38 @@ Hello, world!
 | Система | `rars_exit`, `get_time` / `get_time_lo`, `rars_sleep` |
 | Случайные числа | `rng_set_seed`, `rand_int`, `rand_int_range`, `rand_float`, `rand_double` |
 
-Функции реализованы как `static inline` с использованием `asm volatile("ecall")`
-и компилируются напрямую в инструкции `ecall` с соответствующими номерами
-сисколлов. Для FP-аргументов используются constraint `"f"` и регистры `fa0`,
-что в ABI `ilp32d` позволяет передавать как `float`, так и `double` без
-программных преобразований.
+### Двухплатформенный режим (`__C2RARS__`)
+
+`rars_io.h` собирается и под RARS, и под нативный хост — один и тот же `.c` файл
+можно отлаживать локально (`cc prog.c -o prog && ./prog`), а потом запустить
+через `c2rars` в RARS, не меняя исходник. Переключение управляется макросом:
+
+- При сборке через `c2rars` макрос `__C2RARS__=1` определяется автоматически —
+  тело каждой функции разворачивается в `asm volatile("ecall")` с нужным
+  номером сисколла. Для FP-аргументов используются constraint `"f"` и регистры
+  `fa0`, что в ABI `ilp32d` позволяет передавать как `float`, так и `double`
+  без программных преобразований.
+- При сборке хост-компилятором (`gcc`/`clang`) макрос не определён —
+  функции реализуются через стандартные `<stdio.h>`/`<unistd.h>`/`<sys/time.h>`.
+
+Хост-реализация специально подогнана под байт-в-байт совпадение с выводом
+RARS, чтобы CI мог сравнивать оба бэкенда против одного и того же эталона:
+
+- `print_int_hex` → `0x` + 8 lowercase hex digits, zero-padded
+- `print_int_bin` → 32 бита без префикса
+- `print_float` / `print_double` — алгоритм Java `Double.toString`:
+  shortest round-trippable формат через цикл `snprintf("%.*g") + strtod`,
+  суффикс `.0` для целочисленных значений и литералы `Infinity` / `-Infinity` / `NaN`
+- `rand_*` — Java `Random` LCG (`state * 0x5DEECE66D + 0xB`), включая
+  rejection-sampling в `nextInt(bound)` — поэтому при одинаковом seed
+  RARS и хост выдают одинаковые последовательности
+
+Своих `-D` определений тоже можно добавить — `c2rars` их пробрасывает в
+кросс-компилятор:
+
+```bash
+c2rars -i prog.c -DDEBUG=1 -DBUFSZ=128
+```
 
 ## Примеры
 
@@ -167,19 +194,38 @@ Hello, world!
 | `07_string_input/` | ввод строк и расширенный вывод чисел (hex/bin) |
 | `09_float/` | арифметика с плавающей точкой одинарной точности (RV32F) |
 | `10_static.c` | глобальные и `static` переменные (`.data`, `.bss`, `.comm`) |
-| `12_double/` | арифметика двойной точности (RV32D), Newton-Raphson, ряд `1/n²` |
-| `13_random/` | генератор случайных чисел RARS (syscalls 40–44) |
+| `11_double/` | арифметика двойной точности (RV32D), Newton-Raphson, ряд `1/n²` |
+| `12_random/` | генератор случайных чисел RARS (syscalls 40–44) |
 
 ## Тестирование
 
-Интеграционные тесты запускают полный пайплайн: C → GCC → c2rars → RARS, и сравнивают вывод с эталонами в `tests/expected_output/`.
+Интеграционные тесты прогоняют каждый пример через **оба** бэкенда и
+сравнивают вывод с одним и тем же эталоном в `tests/expected_output/`:
+
+1. **RARS-путь:** `C → GCC (riscv32imfd) → c2rars → java -jar rars.jar nc`
+2. **Host-путь:** `C → cc (нативный) → ./prog`
+
+Если хоть один из бэкендов даёт расхождение — тест падает. Это гарантирует,
+что `rars_io.h` остаётся честной двухплатформенной абстракцией: любой
+коммит, ломающий обратную совместимость на одной из сторон, ловится сразу.
 
 ```bash
-./scripts/test.sh            # базовый прогон
-./scripts/test.sh -v         # подробный вывод
-./scripts/test.sh --build    # пересобрать перед тестированием
-./scripts/test.sh --no-rars  # только трансформация (без RARS)
-./scripts/test.sh --example 03_loop  # один конкретный пример
+./scripts/test.sh                     # базовый прогон (RARS + host)
+./scripts/test.sh -v                  # подробный вывод
+./scripts/test.sh --build             # пересобрать перед тестированием
+./scripts/test.sh --no-rars           # только трансформация и host
+./scripts/test.sh --no-host           # только трансформация и RARS
+./scripts/test.sh --example 03_loop   # один конкретный пример
+HOST_CC=clang ./scripts/test.sh       # выбрать хост-компилятор
+```
+
+Пример успешного прогона:
+
+```
+01_hello             PASS (RARS + host)
+09_float             PASS (RARS + host)
+11_double            PASS (RARS + host)
+12_random            PASS (RARS + host)
 ```
 
 ## CI
@@ -188,7 +234,8 @@ GitHub Actions запускается при пуше в `main` и на pull req
 
 1. Установка зависимостей (cmake, flex, bison, riscv64 gcc, Java 17)
 2. Сборка c2rars
-3. Запуск `scripts/test.sh -v` — все 5 примеров
+3. Запуск `scripts/test.sh -v` — каждый пример валидируется
+   на обоих бэкендах (RARS и host) против общего эталона
 
 ## Структура проекта
 

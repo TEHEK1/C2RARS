@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <vector>
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
@@ -19,6 +20,7 @@ struct Options {
     std::string inputFile;
     std::string outputFile;
     std::string compiler = C2RARS_CROSS_COMPILER;
+    std::vector<std::string> defines;
     bool verbose = false;
 };
 
@@ -32,13 +34,22 @@ static void printHelp() {
         "  -i, --input <file>      Input C file\n"
         "  -o, --output <file>     Output assembly file\n"
         "  -c, --compiler <name>   Cross-compiler command (or set RISCV_GCC env var)\n"
+        "  -D KEY[=VAL]            Pass a -D macro to the cross-compiler\n"
+        "                          (may be repeated; -DKEY also accepted)\n"
         "  -v, --verbose           Verbose output\n"
         "  -h, --help              Show this help\n"
         "      --version           Show version\n"
+        "\nNotes:\n"
+        "  c2rars always defines __C2RARS__=1 for the cross-compiler.\n"
+        "  Use it in your C code (e.g. in c2rars/rars_io.h) to switch between\n"
+        "  the RARS ecall backend and a host-libc backend, so the same source\n"
+        "  can be debugged natively with `cc prog.c -o prog && ./prog` and\n"
+        "  then deployed to RARS via c2rars.\n"
         "\nExamples:\n"
         "  c2rars -i program.c -o program.asm\n"
         "  c2rars -i test.c -o test.asm -v\n"
-        "  c2rars -i hello.c -c riscv64-elf-gcc -v\n";
+        "  c2rars -i hello.c -c riscv64-elf-gcc -v\n"
+        "  c2rars -i prog.c -DDEBUG=1 -DBUFSZ=128\n";
 }
 
 static void printVersion() {
@@ -70,6 +81,10 @@ static bool parseArgs(int argc, char* argv[], Options& opts) {
             opts.outputFile = argv[++i];
         } else if ((arg == "-c" || arg == "--compiler") && i + 1 < argc) {
             opts.compiler = argv[++i];
+        } else if (arg == "-D" && i + 1 < argc) {
+            opts.defines.push_back(argv[++i]);
+        } else if (arg.size() > 2 && arg[0] == '-' && arg[1] == 'D') {
+            opts.defines.push_back(arg.substr(2));
         } else {
             std::cerr << "Unknown argument: " << arg << std::endl;
             return false;
@@ -95,7 +110,12 @@ static bool crossCompile(const Options& opts, const std::string& tempAsmFile) {
           " -S -march=rv32imfd -mabi=ilp32d -O0"
           " -isystem " C2RARS_INCLUDE_DIR
           " -isystem " C2RARS_SOURCE_INCLUDE_DIR
-          " -o " + tempAsmFile + " " + opts.inputFile;
+          " -D__C2RARS__=1";
+
+    for (const auto& def : opts.defines)
+        cmd += " -D" + def;
+
+    cmd += " -o " + tempAsmFile + " " + opts.inputFile;
 
     if (opts.verbose)
         std::cout << "Executing: " << cmd << std::endl;
