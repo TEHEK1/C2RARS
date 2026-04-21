@@ -29,9 +29,9 @@ static void printHelp() {
         "C2RARS - C to RARS assembler transformation\n"
         "Author: Kashapov A.V., BPI231\n\n"
         "Usage:\n"
-        "  c2rars [options]\n\n"
+        "  c2rars [options] [<file.c>]\n\n"
         "Options:\n"
-        "  -i, --input <file>      Input C file\n"
+        "  -i, --input <file>      Input C file (optional if <file.c> is given)\n"
         "  -o, --output <file>     Output assembly file\n"
         "  -c, --compiler <name>   Cross-compiler command (or set RISCV_GCC env var)\n"
         "  -D KEY[=VAL]            Pass a -D macro to the cross-compiler\n"
@@ -46,10 +46,11 @@ static void printHelp() {
         "  can be debugged natively with `cc prog.c -o prog && ./prog` and\n"
         "  then deployed to RARS via c2rars.\n"
         "\nExamples:\n"
+        "  c2rars program.c -o program.asm\n"
         "  c2rars -i program.c -o program.asm\n"
-        "  c2rars -i test.c -o test.asm -v\n"
-        "  c2rars -i hello.c -c riscv64-elf-gcc -v\n"
-        "  c2rars -i prog.c -DDEBUG=1 -DBUFSZ=128\n";
+        "  c2rars test.c -o test.asm -v\n"
+        "  c2rars hello.c -c riscv64-elf-gcc -v\n"
+        "  c2rars prog.c -DDEBUG=1 -DBUFSZ=128\n";
 }
 
 static void printVersion() {
@@ -85,6 +86,13 @@ static bool parseArgs(int argc, char* argv[], Options& opts) {
             opts.defines.push_back(argv[++i]);
         } else if (arg.size() > 2 && arg[0] == '-' && arg[1] == 'D') {
             opts.defines.push_back(arg.substr(2));
+        } else if (!arg.empty() && arg[0] != '-') {
+            if (!opts.inputFile.empty()) {
+                std::cerr << "Error: multiple input files specified: "
+                          << opts.inputFile << " and " << arg << std::endl;
+                return false;
+            }
+            opts.inputFile = arg;
         } else {
             std::cerr << "Unknown argument: " << arg << std::endl;
             return false;
