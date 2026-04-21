@@ -64,6 +64,11 @@ sudo cmake --install build --prefix /usr/local
 c2rars program.c -o program.asm
 ```
 
+Запуск полученного файла в симуляторе RARS (в консольном режиме):
+```bash
+java -jar rars.jar program.asm
+```
+
 ### Параметры командной строки
 
 | Флаг / Аргумент | Описание |
@@ -99,7 +104,7 @@ int main() {
 **Трансляция и запуск (RARS):**
 ```bash
 c2rars hello.c -o hello.asm
-java -jar rars.jar nc hello.asm
+java -jar rars.jar hello.asm
 ```
 
 ### Двухплатформенный режим (`__C2RARS__`)
